@@ -1,0 +1,19 @@
+Job Title: Senior Python Engineer
+Company: CloudSoft Inc
+Department: Platform Engineering
+Level: Senior
+
+We are looking for a Senior Python Engineer to join our growing platform team.
+
+Required Skills: Python, FastAPI, PostgreSQL, Docker, Redis, REST API design, AWS
+Nice to Have: Kubernetes, Terraform, Go
+
+Responsibilities:
+- Design and implement scalable microservices
+- Lead code reviews and mentor junior developers
+- Collaborate with product team on technical requirements
+
+Requirements:
+- 5+ years Python experience
+- Strong SQL skills
+- Experience with cloud infrastructure

@@ -1,0 +1,19 @@
+John Smith
+Email: john.smith@example.com
+Phone: +1-555-0100
+
+SUMMARY
+Experienced Python developer with 7 years in backend development.
+
+SKILLS
+Python, FastAPI, PostgreSQL, Docker, Redis, AWS, SQL, REST APIs
+
+EXPERIENCE
+Senior Backend Engineer — TechCorp (2021-2024)
+Led development of microservices architecture. Built high-throughput data pipelines processing 1M events/day.
+
+Backend Developer — StartupXYZ (2018-2021)
+Built REST APIs for mobile app. Reduced API response time by 40%.
+
+EDUCATION
+BSc Computer Science — State University (2018)

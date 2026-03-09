@@ -1,0 +1,21 @@
+Job Title: Senior Backend Engineer
+Company: TechCorp
+Department: Platform Team
+Level: Senior
+
+We need a Senior Backend Engineer to lead our API platform.
+
+Required Skills: Python, FastAPI, PostgreSQL, Redis, Docker, AWS, REST API design, microservices
+Nice to Have: Kubernetes, Terraform, Go, ElasticSearch
+
+Responsibilities:
+- Design and build scalable APIs handling 1M+ requests/day
+- Lead technical design reviews
+- Mentor 2-3 junior engineers
+- Collaborate with product and frontend teams
+
+Requirements:
+- 5+ years Python backend experience
+- Strong distributed systems knowledge
+- Experience with CI/CD pipelines
+- AWS or GCP cloud experience
