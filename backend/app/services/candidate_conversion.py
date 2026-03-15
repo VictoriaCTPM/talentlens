@@ -68,6 +68,10 @@ def convert_hired_candidate_to_team_member(
                     "(member=%d, candidate=%d)",
                     duplicate.id, candidate_id,
                 )
+                # Update name if candidate has a more complete name
+                best_name = _best_name(candidate.name, duplicate.name, candidate.resume_document_id, db)
+                if best_name and best_name != duplicate.name:
+                    duplicate.name = best_name
                 candidate.team_member_id = duplicate.id
                 _log_event(candidate_id, "converted_to_team_member", {
                     "team_member_id": duplicate.id,
@@ -84,6 +88,7 @@ def convert_hired_candidate_to_team_member(
         return None
 
     skills = _extract_skills_from_resume(candidate.resume_document_id, db)
+    full_name = _best_name(candidate.name, None, candidate.resume_document_id, db)
 
     notes_parts = []
     if candidate.ai_score is not None:
@@ -98,7 +103,7 @@ def convert_hired_candidate_to_team_member(
 
     team_member = TeamMember(
         project_id=position.project_id,
-        name=candidate.name,
+        name=full_name or candidate.name,
         role=position.title,
         level=position.level,
         start_date=None,
@@ -114,7 +119,7 @@ def convert_hired_candidate_to_team_member(
 
     _log_event(candidate_id, "converted_to_team_member", {
         "team_member_id": team_member.id,
-        "team_member_name": team_member.name,
+        "team_member_name": full_name or candidate.name,
         "role": team_member.role,
         "level": team_member.level,
         "skills_count": len(skills) if skills else 0,
@@ -128,6 +133,44 @@ def convert_hired_candidate_to_team_member(
     )
 
     return team_member
+
+
+def _best_name(candidate_name: str | None, existing_name: str | None, resume_document_id: int | None, db: Session) -> str | None:
+    """
+    Return the most complete name available:
+    1. Full name from resume extracted_data (if present)
+    2. candidate_name if it looks more complete than existing_name
+    3. existing_name as fallback
+    """
+    # Try resume extracted data first
+    if resume_document_id:
+        ed = (
+            db.query(ExtractedData)
+            .filter_by(document_id=resume_document_id)
+            .order_by(ExtractedData.id.desc())
+            .first()
+        )
+        if ed and ed.structured_data:
+            data = ed.structured_data
+            contact = data.get("contact_info")
+            extracted = (
+                data.get("name")
+                or data.get("full_name")
+                or data.get("candidate_name")
+                or (contact.get("name") if isinstance(contact, dict) else None)
+            )
+            if extracted and isinstance(extracted, str) and extracted.strip():
+                return extracted.strip()
+
+    # Pick the longer/more complete of candidate_name vs existing_name
+    names = [n.strip() for n in [candidate_name, existing_name] if n and n.strip()]
+    if not names:
+        return None
+    # Prefer name with a space (likely first + last name)
+    with_space = [n for n in names if " " in n]
+    if with_space:
+        return max(with_space, key=len)
+    return max(names, key=len)
 
 
 def _extract_skills_from_resume(resume_document_id: int | None, db: Session) -> list[str]:
