@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, create_engine
 )
@@ -113,6 +113,8 @@ class ProcessingJob(Base):
     document = relationship("Document", back_populates="processing_jobs")
 
 
+# NOTE: AICallLog is write-only (no read API). Kept for observability.
+# See docs/DeadCodeAudit.md — decision: keep as audit log.
 class AICallLog(Base):
     __tablename__ = "ai_call_logs"
 

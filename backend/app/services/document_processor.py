@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.services.llm.base import LLMProvider
+from app.utils.json_helpers import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ async def classify_and_extract(
                 max_tokens=2048,
             )
             try:
-                data = _parse_json(response)
+                data = parse_llm_json(response)
                 extracted_raw = data.get("extracted", data)
                 schema_cls = _SCHEMA_MAP[trusted_type]
                 extracted = schema_cls(**extracted_raw)
@@ -217,7 +218,7 @@ async def classify_and_extract(
         )
 
         try:
-            data = _parse_json(response)
+            data = parse_llm_json(response)
             doc_type = data.get("doc_type", "").lower().strip()
             extracted_raw = data.get("extracted", {})
 
@@ -394,14 +395,3 @@ def _sliding_window(text: str, doc_type: str, meta: dict) -> list[dict[str, Any]
         idx += 1
     return chunks
 
-
-def _parse_json(text: str) -> dict:
-    """Extract JSON from LLM response, tolerating markdown code fences."""
-    text = text.strip()
-    # Strip ```json ... ``` fences if present
-    if text.startswith("```"):
-        lines = text.splitlines()
-        # Remove first and last fence lines
-        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-        text = "\n".join(inner).strip()
-    return json.loads(text)

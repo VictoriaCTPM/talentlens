@@ -65,7 +65,6 @@ class DocumentResponse(BaseModel):
     file_size: int
     status: str
     error_message: Optional[str]
-    content_hash: Optional[str]
     created_at: datetime
     processed_at: Optional[datetime]
     team_member_id: Optional[int] = None

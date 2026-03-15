@@ -3,7 +3,6 @@ Local embeddings using sentence-transformers all-MiniLM-L6-v2.
 Follows DEC-002: 100% free, data never leaves server, runs on CPU.
 """
 import logging
-from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 

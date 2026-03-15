@@ -1,6 +1,8 @@
 """
 Hybrid search endpoint — POST /api/search
 """
+# NOTE: This endpoint has no frontend UI yet. Reserved for future search feature.
+# See docs/DeadCodeAudit.md — decision: keep.
 from typing import Any, Optional
 
 from fastapi import APIRouter

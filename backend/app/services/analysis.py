@@ -13,6 +13,7 @@ from app.services.context_cache import context_cache
 from app.services.llm.base import LLMProvider
 from app.services.retrieval import RetrievalService
 from app.services.team_context import TeamContextService
+from app.utils.json_helpers import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +450,10 @@ class AnalysisEngine:
         return c_result
 
     # ── Position Intelligence (merged A+B+C) ──────────────────────────────────
+    # NOTE: position_intelligence() and _run_position_intelligence() are not yet
+    # wired to the frontend. The frontend calls A/B/C modes separately.
+    # Plan: switch frontend to use /api/analysis/position-intelligence endpoint
+    # to save ~67% tokens. See docs/DeadCodeAudit.md.
 
     async def position_intelligence(self, jd_document_id: int) -> dict[str, Any]:
         """
@@ -918,7 +923,7 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
                 max_tokens=batch_max_tokens,
             )
             try:
-                raw = _parse_json(response)
+                raw = parse_llm_json(response)
                 if isinstance(raw, list):
                     raw = {"candidates": raw}
                 validated = BatchScoringResult(**raw)
@@ -1103,7 +1108,7 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
                 max_tokens=_MAX_TOKENS_MAP.get(mode, 2048),
             )
             try:
-                raw = _parse_json(response)
+                raw = parse_llm_json(response)
                 validated = schema_cls(**raw)
                 return validated.model_dump()
             except (ValidationError, ValueError, json.JSONDecodeError) as exc:
@@ -1156,17 +1161,6 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
             **result,
         }
 
-
-# ── JSON parsing helper ───────────────────────────────────────────────────────
-
-def _parse_json(text: str) -> dict:
-    """Strip markdown fences and parse JSON."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-        text = "\n".join(inner).strip()
-    return json.loads(text)
 
 
 def get_analysis_engine(llm: LLMProvider | None = None) -> AnalysisEngine:

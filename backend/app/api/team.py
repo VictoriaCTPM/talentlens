@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, ExtractedData, ProcessingJob, TeamMember, get_db
@@ -209,17 +208,6 @@ async def add_team_member(
     db.refresh(member)
     _sync_skills_from_resume(member, db)
     return _member_to_response(member, db)
-
-
-@router.get("/api/projects/{project_id}/team/overview")
-def get_team_overview(project_id: int, db: Session = Depends(get_db)):
-    """Skills matrix + role summary — used as AI analysis context."""
-    members = (
-        db.query(TeamMember)
-        .filter(TeamMember.project_id == project_id, TeamMember.status == "active")
-        .all()
-    )
-    return _build_overview(members)
 
 
 @router.get("/api/team/{member_id}", response_model=TeamMemberResponse)
