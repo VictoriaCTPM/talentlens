@@ -57,6 +57,7 @@
 | 3.6 | Mode A — Team-aware prompt (must/nice criticality) | ✅ | Team-covered skills → nice, gaps → must |
 | 3.7 | Mode D — team_complementarity dimension | ✅ | fills_gaps, overlaps, team_dynamics, recommendation |
 | 3.8 | Mode E — JD Reality Check | ✅ | POST /api/analysis/jd-reality-check |
+| 3.9 | Mode D — Structured scoring formula (7-step, role gate) | ✅ | Deterministic weighted formula, RoleAlignment schemas |
 | **TEST CHECKPOINT 3** | All 5 modes produce quality output | ✅ | |
 
 ### Etap 3.5: Team Intelligence Enhancements ✅ COMPLETE
@@ -86,6 +87,14 @@
 | 4.15 | Documents tab — report linking UI | ✅ | Linked/unlinked status, developer name hint, manual link dropdown |
 | 4.16 | Dashboard — team member count in project cards | ✅ | 👥 N team stat shown |
 | **TEST CHECKPOINT 4** | Full flow in browser | 🔄 | All 5 modes + team linking ready to test |
+
+### Etap 4.5: Quality & Testing ✅ COMPLETE
+| # | Task | Status | Test |
+|---|------|--------|------|
+| 4.5.1 | E2E pytest suite (50 tests, all mocked) | ✅ | 50 passed in 1.15s |
+| 4.5.2 | MockLLM / MockEmbeddingService / MockVectorStore fixtures | ✅ | No external API calls in tests |
+| 4.5.3 | Test DB isolation (separate SQLite, wiped per session) | ✅ | Clean state each run |
+| 4.5.4 | Wipe old test data from production DB | ✅ | DB cleaned |
 
 ### Etap 5: Polish & Deploy
 | # | Task | Status | Test |

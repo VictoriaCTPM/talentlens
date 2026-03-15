@@ -1,0 +1,3 @@
+Sofia Hernandez — Mid Backend Engineer
+4 years. Python, Django, PostgreSQL, Celery, Docker, REST
+Maintains patient API layer.

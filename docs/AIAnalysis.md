@@ -126,7 +126,7 @@ HTTP POST /api/analysis/<mode>
 **Необходимый минимум:** 1 резюме + 1 JD
 
 **Что делает:**
-Оценивает кандидата (резюме) относительно вакансии (JD). Выдаёт итоговый балл 0–100, вердикт и детальный разбор.
+Оценивает кандидата (резюме) относительно вакансии (JD) по детерминированной 7-шаговой формуле. Выдаёт итоговый балл 0–100, вердикт и полный разбор.
 
 **Контекст для LLM:**
 - Данные резюме (structured_data)
@@ -134,9 +134,24 @@ HTTP POST /api/analysis/<mode>
 - Исторические похожие кандидаты: resume, interview, report — top-5000 токенов
 - Состав команды (для оценки комплементарности)
 
-**Логика оценки:**
-Кандидат, закрывающий реальные пробелы команды → балл повышается.
-Кандидат, дублирующий уже существующие в команде навыки → балл снижается.
+**7-шаговая формула оценки (DEC-026):**
+
+| Шаг | Критерий | Вес |
+|-----|----------|-----|
+| 1 | **Role Alignment Gate** — engineer vs manager | Если мismatch: cap ≤ 35, force `not_recommended` |
+| 2 | Hard Skills | 40% |
+| 3 | Experience | 25% |
+| 4 | Domain Match | 15% |
+| 5 | Soft Skills | 10% |
+| 6 | Team Fit | 10% |
+| 7 | Math | Взвешенная сумма → `score_breakdown` |
+
+**Уровни совпадения навыков (must-have):**
+- `hands_on` = 1.0 (практический опыт)
+- `exposure` = 0.2 (знакомство)
+- `none` = 0.0 (нет)
+
+**Фейлсейф:** `RoleAlignment.role_alignment_score` по умолчанию = 10 — неполный ответ LLM → автоматически считается несовпадением роли.
 
 **Вердикты по баллу:**
 | Балл | Вердикт |
@@ -145,14 +160,35 @@ HTTP POST /api/analysis/<mode>
 | 65–84 | `moderate_fit` |
 | 45–64 | `risky` |
 | < 45 | `not_recommended` |
+| ≤ 35 (role mismatch) | `not_recommended` (принудительно) |
+
+**Pydantic-схемы (добавлены в DEC-026):**
+- `RoleAlignment` — `candidate_role_type`, `jd_role_type`, `is_match`, `role_alignment_score`, `score_capped`
+- `MustHaveSkillMatch` — `skill`, `match_level` (hands_on/exposure/none), `evidence`
+- `DomainMatch` — `score`, `industry_match`, `relevant_knowledge`
+- `SoftSkillsBreakdown` — `score`, `communication`, `collaboration`, `problem_solving`
+- `ScoreBreakdown` — взвешенные компоненты, `raw_total`, `role_cap_applied`, `final_score`
 
 **Структура ответа:**
 ```json
 {
   "overall_score": 72,
   "verdict": "moderate_fit",
-  "skill_match": {"score": 80, "matched": [...], "missing": [...], "partial": [...]},
-  "experience_match": {"score": 75, "relevant_years": 5, "notes": "..."},
+  "role_alignment": {
+    "candidate_role_type": "engineer",
+    "jd_role_type": "engineer",
+    "is_match": true,
+    "role_alignment_score": 100,
+    "score_capped": false
+  },
+  "skill_match": {
+    "score": 80,
+    "must_have_skills": [{"skill": "Python", "match_level": "hands_on", "evidence": "..."}],
+    "matched": [...], "missing": [...], "partial": [...]
+  },
+  "experience_match": {"score": 75, "relevant_years": 5, "required_years": 5, "role_type_match": true, "notes": "..."},
+  "domain_match": {"score": 70, "industry_match": true, "relevant_knowledge": [...]},
+  "soft_skills": {"score": 75, "communication": 30, "collaboration": 30, "problem_solving": 15},
   "team_compatibility": {"score": 70, "notes": "..."},
   "team_complementarity": {
     "score": 75,
@@ -160,6 +196,16 @@ HTTP POST /api/analysis/<mode>
     "overlaps": ["навыки, которые уже есть в команде"],
     "team_dynamics": "...",
     "recommendation": "..."
+  },
+  "score_breakdown": {
+    "hard_skills_weighted": 32.0,
+    "experience_weighted": 18.75,
+    "domain_weighted": 10.5,
+    "soft_skills_weighted": 7.5,
+    "team_weighted": 7.0,
+    "raw_total": 75.75,
+    "role_cap_applied": false,
+    "final_score": 72
   },
   "strengths": [...],
   "gaps": [...],

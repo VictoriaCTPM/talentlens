@@ -163,3 +163,31 @@
 - **Decision**: `GET /api/projects/{id}/documents` batch-loads `ExtractedData` for report/interview docs in a single IN query and returns `developer_name_hint` field
 - **Pattern**: Single extra query (not N+1); used by frontend to show "this report mentions John Smith — link?" prompt
 - **Fields added to DocumentResponse**: `team_member_id: Optional[int]`, `developer_name_hint: Optional[str]`
+
+## DEC-026: Mode D — Structured Scoring Formula (7-step, role alignment gate)
+- **Date**: 2026-03-15
+- **Decision**: Replace impression-based Mode D candidate scoring with a deterministic 7-step weighted formula
+- **Steps**:
+  1. Role Alignment Gate — detect engineer vs manager mismatch; if mismatch → cap score ≤ 35, force `not_recommended`
+  2. Hard Skills (40%) — `hands_on` = 1.0, `exposure` = 0.2, `none` = 0.0; scored per must-have skill
+  3. Experience (25%) — years comparison + role type match
+  4. Domain (15%) — industry alignment + relevant knowledge
+  5. Soft Skills (10%) — communication + collaboration + problem_solving sub-scores
+  6. Team Fit (10%) — compatibility + complementarity (fills_gaps vs overlaps)
+  7. Math — weighted sum → `score_breakdown` with `role_cap_applied` flag
+- **New Pydantic schemas**: `RoleAlignment`, `MustHaveSkillMatch`, `DomainMatch`, `SoftSkillsBreakdown`, `ScoreBreakdown`; updated `SkillMatchDetail`, `ExperienceMatch`, `CandidateScoreResult`, `BatchCandidateScoreItem`
+- **Fail-safe**: `RoleAlignment` defaults to `role_alignment_score=10` — any incomplete LLM response is treated as a mismatch (score capped at 35)
+- **Validator**: Two-phase `@model_validator(mode="after")` — role gate first, then standard threshold check (85/65/45)
+- **Rationale**: Reproducible, auditable scoring; eliminates prompt-level variability; enables score_breakdown UI card
+
+## DEC-027: E2E test suite — pytest with mocked services
+- **Date**: 2026-03-15
+- **Decision**: Add `backend/tests/test_e2e.py` (50 ordered tests) + `backend/tests/conftest.py` (session fixtures)
+- **Mock strategy**:
+  - `MockLLM` — deterministic JSON dispatch by prompt content markers; no Groq API calls
+  - `MockEmbeddingService` — returns 384-dim zero vectors; no model download
+  - `MockVectorStore` — no-op stubs; no ChromaDB disk I/O
+  - Separate SQLite DB (`data/test_e2e.db`), wiped before and after each session
+- **Coverage**: health → projects → positions → documents (async processing) → JD attachment → team → analysis (5 modes) → candidates → batch scoring → search → pipeline monitor → delete cleanup
+- **Runtime**: ~1.15s for 50 tests
+- **Rationale**: Fast, deterministic CI without external dependencies; catches regressions across all API contracts

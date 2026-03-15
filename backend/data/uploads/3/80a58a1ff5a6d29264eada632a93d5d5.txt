@@ -1,0 +1,4 @@
+Ben Foster — Senior Platform/SRE Engineer
+7 years. Kubernetes (CKA+CKS), Go, Terraform, Helm, ArgoCD, Istio, Prometheus, Grafana, Kubernetes Operators (3 custom operators in production), Internal Developer Platform
+Previous: Platform Engineering at Spotify (3 years), SRE at Cloudflare (2 years)
+Public speaker at KubeCon 2023

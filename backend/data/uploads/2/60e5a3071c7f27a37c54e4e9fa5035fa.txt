@@ -1,0 +1,4 @@
+Job Description: Data Architect
+Required: Data modelling, dbt, Spark, Data governance, SQL, Cloud (AWS/GCP)
+Experience: 6+ years data architecture
+Responsibilities: Design data warehouse schema, implement data governance framework, work with Laura Chen.

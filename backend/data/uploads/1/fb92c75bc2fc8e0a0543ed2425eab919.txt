@@ -1,0 +1,4 @@
+Weekly Report — Piotr Wiśniewski — Week 10
+Work done: Upgraded EKS cluster to 1.29, set up Grafana dashboards for payment latency, configured autoscaling for peak loads.
+Challenges: EKS node group upgrade caused 2-minute downtime.
+Next week: Blue-green deployment for zero-downtime upgrades.

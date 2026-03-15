@@ -1,0 +1,5 @@
+David Kim — Backend Engineer
+5 years experience
+Python, Django, PostgreSQL, Redis, Docker, REST API
+Previous: E-commerce backend at Samsung SDS (2 years)
+No fintech experience

@@ -203,17 +203,17 @@ try:
 
     # ── Team members ─────────────────────────────────────────────────────────
     tm1 = TeamMember(project_id=pid, name="Anna Kowalski", role="Lead Backend Engineer",
-                     level="lead", email="anna@novex.io",
+                     level="lead",
                      skills=["Python", "FastAPI", "PostgreSQL", "Redis", "Docker", "Kubernetes", "AWS"],
                      resume_document_id=tm1_res.id, status="active",
                      start_date=_days_ago(365))
     tm2 = TeamMember(project_id=pid, name="Marek Nowak", role="Mid Frontend Engineer",
-                     level="mid", email="marek@novex.io",
+                     level="mid",
                      skills=["React", "TypeScript", "Next.js", "GraphQL"],
                      resume_document_id=tm2_res.id, status="active",
                      start_date=_days_ago(200))
     tm3 = TeamMember(project_id=pid, name="Piotr Wiśniewski", role="Senior DevOps Engineer",
-                     level="senior", email="piotr@novex.io",
+                     level="senior",
                      skills=["Kubernetes", "Terraform", "AWS", "CI/CD", "Prometheus"],
                      resume_document_id=tm3_res.id, status="active",
                      start_date=_days_ago(300))
@@ -554,19 +554,19 @@ try:
          "summary": "Lead architect. GDPR/data governance expert. 12yr experience."})
 
     tm4 = TeamMember(project_id=pid, name="James Wilson", role="Senior Data Engineer",
-                     level="senior", email="james@medcore.io",
+                     level="senior",
                      skills=["Python", "Spark", "Databricks", "Airflow", "Delta Lake", "SQL"],
                      resume_document_id=tm4_res.id, status="active", start_date=_days_ago(400))
     tm5 = TeamMember(project_id=pid, name="Sofia Hernandez", role="Mid Backend Developer",
-                     level="mid", email="sofia@medcore.io",
+                     level="mid",
                      skills=["Python", "Django", "PostgreSQL", "Celery", "Docker"],
                      resume_document_id=tm5_res.id, status="active", start_date=_days_ago(250))
     tm6 = TeamMember(project_id=pid, name="Tomasz Kaczmarek", role="Junior Frontend Developer",
-                     level="junior", email="tomasz@medcore.io",
+                     level="junior",
                      skills=["Vue.js", "JavaScript", "CSS"],
                      resume_document_id=tm6_res.id, status="active", start_date=_days_ago(100))
     tm7 = TeamMember(project_id=pid, name="Laura Chen", role="Lead Architect",
-                     level="lead", email="laura@medcore.io",
+                     level="lead",
                      skills=["Python", "AWS", "Kafka", "Microservices", "GDPR compliance", "Data governance"],
                      resume_document_id=tm7_res.id, status="active", start_date=_days_ago(500))
     db.add_all([tm4, tm5, tm6, tm7])
@@ -814,11 +814,11 @@ try:
          "summary": "Platform engineer building internal tooling in Go and Python."})
 
     tm8 = TeamMember(project_id=pid, name="Ryan O'Brien", role="Senior DevOps Engineer",
-                     level="senior", email="ryan@cloudstack.io",
+                     level="senior",
                      skills=["Docker", "Kubernetes", "Terraform", "Azure", "Helm", "ArgoCD", "GitOps"],
                      resume_document_id=tm8_res.id, status="active", start_date=_days_ago(180))
     tm9 = TeamMember(project_id=pid, name="Priya Sharma", role="Mid Backend Engineer",
-                     level="mid", email="priya@cloudstack.io",
+                     level="mid",
                      skills=["Python", "Go", "PostgreSQL", "gRPC", "Docker", "Redis"],
                      resume_document_id=tm9_res.id, status="active", start_date=_days_ago(120))
     db.add_all([tm8, tm9])
