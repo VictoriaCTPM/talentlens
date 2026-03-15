@@ -165,6 +165,21 @@ async def _process_document(document_id: int, job_id: int) -> None:
         doc.processed_at = datetime.utcnow()
         db.commit()
 
+        # ── 9. Invalidate project context cache ──────────────────────────────
+        try:
+            from app.services.context_cache import context_cache
+            context_cache.invalidate(doc.project_id)
+        except Exception as _cache_exc:
+            logger.debug("Context cache invalidation failed for project %d: %s", doc.project_id, _cache_exc)
+
+        # ── 10. Auto-link report to team member ──────────────────────────────
+        if doc_type in ("report", "client_report", "interview"):
+            try:
+                from app.api.team import try_link_report_to_team_member
+                try_link_report_to_team_member(document_id, db)
+            except Exception as _link_exc:
+                logger.debug("Auto-link failed for doc %d: %s", document_id, _link_exc)
+
         await _emit(job_id, {
             "status": "completed", "progress": 100,
             "step": "done", "doc_type": doc_type, "chunks": len(chunks),

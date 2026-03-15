@@ -1,0 +1,2 @@
+Skills: TypeScript, React
+Experience: 3 years frontend development

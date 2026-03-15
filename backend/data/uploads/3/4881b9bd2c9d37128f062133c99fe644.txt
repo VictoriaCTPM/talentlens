@@ -1,0 +1,4 @@
+Dmitri Volkov — Platform Engineer
+5 years. Kubernetes, Terraform, ArgoCD, GitOps, Go, Helm, Prometheus, Grafana, Docker, Azure
+Previous: IDP team at Booking.com (2 years), SRE at Deutsche Telekom (2 years)
+CKA certified

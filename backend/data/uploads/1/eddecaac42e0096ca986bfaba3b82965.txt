@@ -1,0 +1,5 @@
+Anna Kowalski — Lead Backend Engineer
+Experience: 8 years
+Skills: Python, FastAPI, PostgreSQL, Redis, Docker, Kubernetes, Celery, AWS
+Current role: Lead Backend at Novex. Designed the payments core service.
+Education: Warsaw University of Technology, CS

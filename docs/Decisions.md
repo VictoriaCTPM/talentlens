@@ -86,3 +86,80 @@
 - **Date**: 2026-03-09
 - **Decision**: Railway for backend + DB + ChromaDB; Vercel for frontend
 - **Cost**: ~$5-10/mo after Railway trial
+## DEC-015: NumPy version pinning for ChromaDB
+- **Date**: 2026-03-09
+- **Decision**: Use `.venv` virtualenv with pinned NumPy < 2.0 for local backend dev
+- **Rationale**: ChromaDB uses `np.float_` removed in NumPy 2.0; system Python has NumPy 2.x
+- **Fix**: Always start backend with `source .venv/bin/activate && uvicorn ...`
+- **Migration path**: Upgrade ChromaDB when they release NumPy 2.0 compatible version
+
+## DEC-016: CandidateEvent timeline pattern
+- **Date**: 2026-03-09
+- **Decision**: Log all candidate lifecycle changes to `candidate_events` table (event_type + JSON event_data)
+- **Event types**: `created`, `status_change`, `scored`
+- **Rationale**: Provides full audit trail for recruiters; enables timeline UI without additional complexity
+- **Trade-offs**: Slightly more writes per operation; negligible at current scale
+
+## DEC-017: Explicit Position and Candidate entities
+- **Date**: 2026-03-09
+- **Decision**: Add Position (from JD) and Candidate (resume + status) as first-class DB entities
+- **Rationale**: Without these, the app can't track hiring pipeline, candidate status,
+  or generate dashboard metrics. Documents alone are not enough — a candidate has a
+  lifecycle (new → screening → interview → hired/rejected) tied to a specific position.
+- **Impact**: New DB models, new API endpoints, updated frontend tabs, Pipeline Monitor
+  now reads real data instead of mock data
+- **Status**: Approved
+
+## DEC-018: AnalysisEngine uses internal SessionLocal, not injected db
+- **Date**: 2026-03-09
+- **Decision**: `AnalysisEngine` opens its own `SessionLocal()` sessions internally; callers must NOT pass `db` to constructor
+- **Rationale**: Engine is a service layer, not a FastAPI dependency; it manages its own DB lifecycle
+- **API callers**: Use `get_analysis_engine()` factory, not `AnalysisEngine(db)`
+- **Result shape**: `engine.candidate_score()` returns plain `dict` (not ORM object); `result_id` key holds saved AnalysisResult ID
+
+## DEC-019: Candidate Profile page (/candidates/[id])
+- **Date**: 2026-03-09
+- **Decision**: Dedicated candidate profile page with inline-editable fields (click-to-edit pattern)
+- **Layout**: 60/40 two-column — left: AI scores + profile fields; right: recruiter/interview/client notes
+- **Pattern**: Each field shows value or placeholder; click → input; blur → auto-save via PATCH
+- **Rationale**: Eliminates modal overload; faster editing flow for recruiters
+
+## DEC-020: Document upload with preset doc_type
+- **Date**: 2026-03-09
+- **Decision**: `POST /api/projects/{id}/documents` accepts optional `doc_type` form field
+- **Valid values**: `jd`, `resume`, `report`, `interview`, `other`
+- **Rationale**: When uploading from categorized UI sections, classification LLM call is redundant; preset saves API quota
+- **Fallback**: If `doc_type` not provided or invalid, normal LLM classification runs
+
+## DEC-021: Mode E — JD Reality Check analysis mode
+- **Date**: 2026-03-11
+- **Decision**: Add Mode E that audits a JD against current team + weekly reports
+- **Output**: `skills_vs_reality` (JD requirements vs team's actual skills), `workload_analysis` (JD claims vs report reality), `necessity_check` (is this hire justified?), `jd_improvement_suggestions`
+- **Sufficiency**: Only requires 1 JD to run; team/reports availability affects quality rating (low/medium/high) but does not block execution
+- **Endpoint**: `POST /api/analysis/jd-reality-check`
+- **Rationale**: Prevents redundant hires; exposes JD inaccuracies before wasting recruiter time
+
+## DEC-022: Mode A — team-aware skill criticality
+- **Date**: 2026-03-11
+- **Decision**: Mode A prompt now classifies skill criticality based on current team: skills already covered by existing members → `"nice"`, skills genuinely missing from the team → `"must"`
+- **Rationale**: Without team context, all skills default to must-have which wastes search effort. Team-aware criticality focuses recruiters on real gaps.
+- **Dependency**: Requires `TeamContextService.get_team_context(project_id)` to return populated team data
+
+## DEC-023: Mode D — team_complementarity as scored dimension
+- **Date**: 2026-03-11
+- **Decision**: Add `team_complementarity` as a fifth scoring dimension in Mode D (Candidate Scorer)
+- **Fields**: `score` (0-100), `fills_gaps` (skills candidate brings that team lacks), `overlaps` (skills candidate has that team already has), `team_dynamics` (seniority fit), `recommendation` (specific team-fit advice)
+- **Score impact**: Candidate filling genuine team gaps → boost overall_score; candidate only duplicating existing skills → lower overall_score
+- **Fallback**: If no team data available, `score=50`, fills_gaps=[], overlaps=[], team_dynamics="No team data available"
+
+## DEC-024: Auto-link reports to team members after processing
+- **Date**: 2026-03-11
+- **Decision**: After a report/interview document is processed (step 9 in job_queue.py), attempt fuzzy name match between `extracted_data.developer_name` and `TeamMember.name` to set `document.team_member_id`
+- **Match logic**: `try_link_report_to_team_member()` in `api/team.py`; wrapped in try/except so failure never blocks processing
+- **Frontend**: Documents tab shows green "→ Linked to: Name" for linked reports, amber warning with hint name for unlinked; manual link dropdown available
+
+## DEC-025: developer_name_hint in document list response
+- **Date**: 2026-03-11
+- **Decision**: `GET /api/projects/{id}/documents` batch-loads `ExtractedData` for report/interview docs in a single IN query and returns `developer_name_hint` field
+- **Pattern**: Single extra query (not N+1); used by frontend to show "this report mentions John Smith — link?" prompt
+- **Fields added to DocumentResponse**: `team_member_id: Optional[int]`, `developer_name_hint: Optional[str]`

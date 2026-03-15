@@ -1,0 +1,2 @@
+Skills: Python, Go, PostgreSQL, Redis
+Experience: 6 years backend development

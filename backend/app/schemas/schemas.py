@@ -22,6 +22,12 @@ class ProjectResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    # enriched stats (populated by API, not ORM)
+    open_positions_count: int = 0
+    total_candidates_count: int = 0
+    avg_days_open: Optional[float] = None
+    health_status: str = "healthy"   # healthy / attention / at_risk
+    team_members_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -62,6 +68,8 @@ class DocumentResponse(BaseModel):
     content_hash: Optional[str]
     created_at: datetime
     processed_at: Optional[datetime]
+    team_member_id: Optional[int] = None
+    developer_name_hint: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -179,3 +187,199 @@ class AnalysisResultResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Position
+# ---------------------------------------------------------------------------
+
+class PositionCreate(BaseModel):
+    title: str
+    project_id: int
+    jd_document_id: Optional[int] = None
+    level: Optional[str] = None   # junior/mid/senior/lead
+
+
+class PositionUpdate(BaseModel):
+    title: Optional[str] = None
+    status: Optional[str] = None   # open/paused/closed/filled
+    level: Optional[str] = None
+    client_rate: Optional[float] = None
+    client_rate_currency: Optional[str] = None
+    client_rate_period: Optional[str] = None
+
+
+class PositionResponse(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    level: Optional[str]
+    status: str
+    jd_document_id: Optional[int]
+    days_open: int
+    candidates_count: int = 0
+    created_at: datetime
+    closed_at: Optional[datetime]
+    # JD enrichment (populated by API, not ORM)
+    jd_processing_status: Optional[str] = None   # uploaded/queued/processing/processed/error
+    jd_job_id: Optional[int] = None              # for SSE polling
+    jd_summary: Optional[dict[str, Any]] = None  # extracted JD structured data
+    # Rate fields
+    client_rate: Optional[float] = None
+    client_rate_currency: Optional[str] = None
+    client_rate_period: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PositionList(BaseModel):
+    items: list[PositionResponse]
+    total: int
+
+
+# ---------------------------------------------------------------------------
+# Candidate
+# ---------------------------------------------------------------------------
+
+class CandidateCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    resume_document_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class CandidateUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    email: Optional[str] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    years_of_experience: Optional[float] = None
+    salary_expectation: Optional[str] = None
+    location: Optional[str] = None
+    availability: Optional[str] = None
+    recruiter_notes: Optional[str] = None
+    interview_notes: Optional[str] = None
+    client_feedback: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    tags: Optional[list[str]] = None
+    candidate_rate: Optional[float] = None
+    candidate_rate_currency: Optional[str] = None
+    candidate_rate_period: Optional[str] = None
+
+
+class CandidateResponse(BaseModel):
+    id: int
+    position_id: int
+    name: str
+    email: Optional[str]
+    resume_document_id: Optional[int]
+    status: str
+    ai_score: Optional[float]
+    ai_verdict: Optional[str]
+    ai_analysis_id: Optional[int]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    # Profile fields
+    phone: Optional[str] = None
+    years_of_experience: Optional[float] = None
+    salary_expectation: Optional[str] = None
+    location: Optional[str] = None
+    availability: Optional[str] = None
+    recruiter_notes: Optional[str] = None
+    interview_notes: Optional[str] = None
+    client_feedback: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    tags: Optional[list[str]] = None
+    # Rate fields
+    candidate_rate: Optional[float] = None
+    candidate_rate_currency: Optional[str] = None
+    candidate_rate_period: Optional[str] = None
+    # Computed enrichment (not from ORM, populated at query time)
+    skill_match_score: Optional[float] = None
+    scored_at: Optional[datetime] = None
+    resume_extracted: Optional[dict[str, Any]] = None
+    margin: Optional[dict[str, Any]] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CandidateList(BaseModel):
+    items: list[CandidateResponse]
+    total: int
+
+
+class CandidateEventResponse(BaseModel):
+    id: int
+    candidate_id: int
+    event_type: str
+    event_data: Optional[dict[str, Any]] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
+class PipelinePositionResponse(BaseModel):
+    id: int
+    title: str
+    project_id: int
+    project_name: str
+    client_name: str
+    days_open: int
+    candidates_count: int
+    status: str
+    status_label: str   # "Critical" / "Slow" / "On Track"
+
+
+# ---------------------------------------------------------------------------
+# Team Member
+# ---------------------------------------------------------------------------
+
+class TeamMemberCreate(BaseModel):
+    name: str
+    role: str
+    level: Optional[str] = None
+    start_date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class TeamMemberUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    level: Optional[str] = None
+    start_date: Optional[datetime] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    skills: Optional[list[str]] = None
+
+
+class TeamMemberResponse(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    role: str
+    level: Optional[str]
+    start_date: Optional[datetime]
+    status: str
+    resume_document_id: Optional[int]
+    skills: Optional[list[str]]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    # Computed fields (populated by API, not ORM)
+    resume_summary: Optional[dict[str, Any]] = None
+    reports_count: int = 0
+    last_report_date: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TeamMemberList(BaseModel):
+    items: list[TeamMemberResponse]
+    total: int
+    overview: Optional[dict[str, Any]] = None  # skills matrix + role summary

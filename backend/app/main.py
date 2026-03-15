@@ -22,6 +22,10 @@ async def lifespan(app: FastAPI):
     # Create DB tables
     Base.metadata.create_all(bind=engine)
 
+    # Warm up embeddings model (triggers download/load before first request)
+    from app.services.embeddings import get_embedding_service
+    get_embedding_service()
+
     # Start background job queue worker
     from app.services import job_queue
     await job_queue.start_worker()
@@ -34,22 +38,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="TalentLens API", version="0.1.0", lifespan=lifespan)
 
+_cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from app.api import analysis, documents, jobs, projects, search  # noqa: E402
+from app.api import analysis, candidates, documents, jobs, positions, projects, search, team  # noqa: E402
 
 app.include_router(projects.router)
 app.include_router(documents.router)
 app.include_router(jobs.router)
 app.include_router(search.router)
 app.include_router(analysis.router)
+app.include_router(positions.router)
+app.include_router(candidates.router)
+app.include_router(team.router)
 
 
 # ── Base routes ───────────────────────────────────────────────────────────────

@@ -1,0 +1,5 @@
+Elena Sokolova — Senior Backend Engineer
+8 years experience
+Python, FastAPI, PostgreSQL, Redis, Kafka, gRPC, Docker, AWS
+Previous: Payment systems at Stripe EU (3 years), PCI-DSS certified
+Education: MSc Computer Science, Kyiv Polytechnic

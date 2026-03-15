@@ -44,10 +44,12 @@ Upload file → Save to disk/volume → Parse (PyMuPDF for PDF, python-docx for 
 
 
 ## AI Analysis Modes
-- **Mode A — Talent Brief**: JD → skill checklist, search tips, pitfalls, historical context
+- **Mode A — Talent Brief**: JD → skill checklist, search tips, pitfalls, historical context; team context adjusts skill criticality (team-covered skills = "nice", gaps = "must")
 - **Mode B — Historical Match**: JD → similar past positions, success/failure patterns
-- **Mode C — Level Advisor**: JD → recommended seniority with evidence from past projects
-- **Mode D — Candidate Scorer**: Resume + JD → score 0-100, skill/experience/team match, verdict
+- **Mode C — Level Advisor**: JD → recommended seniority with evidence from past projects; considers existing team level distribution
+- **Mode D — Candidate Scorer**: Resume + JD → score 0-100, skill/experience/team match, verdict; includes `team_complementarity` (fills_gaps, overlaps, team_dynamics, recommendation)
+- **Mode E — JD Reality Check**: JD + team resumes + weekly reports → audit whether JD matches project reality, skills_vs_reality table, workload_analysis, necessity_check, jd_improvement_suggestions
+- **Team Context**: All modes (A, B, C, D, E) receive current team composition (`TeamContextService.get_team_context()`) as additional prompt context for smarter, team-aware recommendations
 
 ## Anti-Hallucination System (5 levels)
 1. Grounding prompt: "Answer ONLY based on provided documents"

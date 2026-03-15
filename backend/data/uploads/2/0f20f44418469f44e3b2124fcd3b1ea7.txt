@@ -1,0 +1,4 @@
+Weekly Report — James Wilson — Week 9
+Completed: Migrated 3 ETL pipelines from Glue to Databricks, fixed Delta Lake MERGE performance issue (5x speedup), onboarded new S3 data source for lab results.
+Blockers: ML feature engineering backlog growing — no ML engineer to consume clean data.
+Next week: Implement data quality checks, begin model feature store design.

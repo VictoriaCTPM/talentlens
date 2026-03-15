@@ -1,0 +1,4 @@
+Alex Petrov — ML Engineer
+5 years. Python, PyTorch, scikit-learn, MLflow, SQL, Airflow, Docker
+Previous: NLP at VTB Bank (fintech ML), anomaly detection models for fraud.
+No healthcare experience.

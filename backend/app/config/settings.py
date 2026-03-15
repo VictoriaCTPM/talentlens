@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "groq_free"
     UPLOAD_DIR: str = "./data/uploads"
     CHROMA_DIR: str = "./data/chroma"
+    # Comma-separated allowed CORS origins. Use "*" for local dev.
+    # Production example: "https://app.example.com,https://admin.example.com"
+    CORS_ORIGINS: str = "*"
 
 
 settings = Settings()

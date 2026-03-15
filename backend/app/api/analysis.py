@@ -33,6 +33,14 @@ class CandidateScoreRequest(BaseModel):
     jd_document_id: int
 
 
+class JDRealityCheckRequest(BaseModel):
+    document_id: int
+
+
+class PositionIntelligenceRequest(BaseModel):
+    jd_document_id: int
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _resolve_project(document_id: int, db: Session) -> int:
@@ -112,6 +120,25 @@ async def level_advisor(
     return await engine.level_advisor(body.document_id)
 
 
+# ── Position Intelligence (A+B+C combined) ────────────────────────────────────
+
+@router.post("/position-intelligence")
+async def position_intelligence(
+    body: PositionIntelligenceRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Run Modes A+B+C in a single LLM call (or return cached results if run within the last hour).
+    Returns talent_brief, historical_match, and level_advisor together.
+    Prefer this endpoint over calling A/B/C separately — ~67% fewer tokens.
+    """
+    project_id = _resolve_project(body.jd_document_id, db)
+    _check_sufficiency(project_id, "A")  # A has the loosest requirements of the three
+
+    engine = get_analysis_engine()
+    return await engine.position_intelligence(body.jd_document_id)
+
+
 # ── Mode D — Candidate Scorer ─────────────────────────────────────────────────
 
 @router.post("/candidate-score")
@@ -131,6 +158,25 @@ async def candidate_score(
     return await engine.candidate_score(body.resume_document_id, body.jd_document_id)
 
 
+# ── Mode E — JD Reality Check ─────────────────────────────────────────────────
+
+@router.post("/jd-reality-check")
+async def jd_reality_check(
+    body: JDRealityCheckRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Audit a JD against the current team composition and weekly reports.
+    Checks: are the required skills already on the team? Does the JD match what the team actually does?
+    Is this hire actually necessary?
+    """
+    project_id = _resolve_project(body.document_id, db)
+    _check_sufficiency(project_id, "E")
+
+    engine = get_analysis_engine()
+    return await engine.jd_reality_check(body.document_id)
+
+
 # ── Data sufficiency check ────────────────────────────────────────────────────
 
 @router.get("/sufficiency/{project_id}/{mode}")
@@ -139,8 +185,8 @@ def check_sufficiency(project_id: int, mode: str, db: Session = Depends(get_db))
     Check if a project has enough data to run a given analysis mode (A/B/C/D).
     Use this before triggering analysis to show the user what's missing.
     """
-    if mode.upper() not in ("A", "B", "C", "D"):
-        raise HTTPException(status_code=400, detail="Mode must be A, B, C, or D")
+    if mode.upper() not in ("A", "B", "C", "D", "E"):
+        raise HTTPException(status_code=400, detail="Mode must be A, B, C, D, or E")
     return data_sufficiency_check(project_id, mode.upper())
 
 
@@ -155,3 +201,12 @@ def get_results(project_id: int, db: Session = Depends(get_db)) -> list[Analysis
         .order_by(AnalysisResult.created_at.desc())
         .all()
     )
+
+
+@router.get("/results/detail/{result_id}", response_model=AnalysisResultResponse)
+def get_analysis_result(result_id: int, db: Session = Depends(get_db)) -> AnalysisResult:
+    """Return a single analysis result by ID."""
+    ar = db.get(AnalysisResult, result_id)
+    if not ar:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    return ar

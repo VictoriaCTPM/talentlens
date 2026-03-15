@@ -71,3 +71,44 @@ Dashboard (home) ├── Project Card → Project Detail │ ├── Tab: Do
 ## 5. Icons
 - Library: Lucide React (included with shadcn/ui)
 - Key: Building2, Users, Clock, Upload, FileText, AlertTriangle, CheckCircle, XCircle, Loader2, Search, BarChart3
+Position Card (inside project detail)
+
+┌─────────────────────────────────────────────────────┐
+│  Senior Backend Engineer          ● Open   Day 18   │
+│  From JD: backend-engineer-jd.pdf                   │
+│                                                      │
+│  👤 4 candidates   ✅ 2 scored   ⏳ 2 pending       │
+│                                                      │
+│  Top candidate: Sarah Chen — 84 pts, Strong Fit     │
+│                                                      │
+│  [View Candidates]  [Run AI Analysis]  [Close]      │
+└─────────────────────────────────────────────────────┘
+Add Candidate Dialog
+
+┌─────────────────────────────────────────┐
+│  Add Candidate                     [x]  │
+│                                         │
+│  Position: Senior Backend Engineer      │
+│                                         │
+│  ○ Upload new resume                    │
+│    ┌─────────────────────────────┐      │
+│    │  Drag & drop PDF/DOC here  │      │
+│    └─────────────────────────────┘      │
+│                                         │
+│  ○ Choose existing resume               │
+│    ┌─────────────────────────────┐      │
+│    │  🔍 Search uploaded resumes │      │
+│    │  ☐ Alex Johnson (resume.pdf)│      │
+│    │  ☐ Maria Lopez (ml-cv.doc)  │      │
+│    └─────────────────────────────┘      │
+│                                         │
+│  [Cancel]              [Add Candidate]  │
+└─────────────────────────────────────────┘
+Candidate Row in Position Detail
+
+| # | Name          | Score | Skills | Exp  | Verdict       | Status              | Actions        |
+|---|---------------|-------|--------|------|---------------|---------------------|----------------|
+| 1 | Sarah Chen    | 84    | 78%    | 91%  | ✅ Strong Fit  | Technical Interview | [View] [▼]     |
+| 2 | Alex Johnson  | 71    | 82%    | 65%  | ✅ Strong Fit  | Screening           | [View] [▼]     |
+| 3 | Maria Lopez   | 45    | 40%    | 55%  | ❌ Not Rec.    | Rejected            | [View] [▼]     |
+| — | James Wilson  | —     | —      | —    | ⏳ Pending     | New                 | [Score] [▼]    |
