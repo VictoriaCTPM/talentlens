@@ -5,6 +5,7 @@ import hashlib
 import logging
 import os
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
@@ -119,6 +120,7 @@ def _candidate_to_response(
         scored_at=scored_at,
         resume_extracted=resume_extracted,
         margin=margin,
+        team_member_id=c.team_member_id,
     )
 
 
@@ -315,6 +317,30 @@ def update_candidate(candidate_id: int, body: CandidateUpdate, db: Session = Dep
         val = getattr(body, field)
         if val is not None:
             setattr(c, field, val)
+
+    if body.status == "hired":
+        from app.services.candidate_conversion import convert_hired_candidate_to_team_member
+        from app.services.context_cache import context_cache
+
+        team_member = convert_hired_candidate_to_team_member(candidate_id, db)
+        if team_member:
+            position = db.get(Position, c.position_id)
+            if position:
+                context_cache.invalidate(position.project_id)
+            logger.info("Candidate %d → team member %d", candidate_id, team_member.id)
+
+        # Mark position as filled when at least one candidate is hired
+        position = db.get(Position, c.position_id)
+        if position and position.status == "open":
+            hired_count = (
+                db.query(Candidate)
+                .filter_by(position_id=position.id, status="hired")
+                .count()
+            )
+            if hired_count >= 1:
+                position.status = "filled"
+                position.closed_at = datetime.utcnow()
+                logger.info("Position %d marked as filled", position.id)
 
     db.commit()
     db.refresh(c)

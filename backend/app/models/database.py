@@ -188,11 +188,14 @@ class Candidate(Base):
     candidate_rate = Column(Float, nullable=True)
     candidate_rate_currency = Column(String(10), nullable=True, default="USD")
     candidate_rate_period = Column(String(20), nullable=True)  # hourly/monthly/annual
+    # Link to TeamMember created when hired
+    team_member_id = Column(Integer, ForeignKey("team_members.id"), nullable=True)
 
     position = relationship("Position", back_populates="candidates")
     resume_document = relationship("Document", foreign_keys=[resume_document_id])
     ai_analysis = relationship("AnalysisResult", foreign_keys=[ai_analysis_id])
     events = relationship("CandidateEvent", back_populates="candidate", cascade="all, delete-orphan")
+    team_member = relationship("TeamMember", foreign_keys=[team_member_id])
 
 
 class CandidateEvent(Base):

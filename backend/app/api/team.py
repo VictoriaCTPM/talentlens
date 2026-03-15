@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 import logging
 
-from app.models.database import Document, ExtractedData, ProcessingJob, ReportMemberLink, TeamMember, get_db
+from app.models.database import Candidate, Document, ExtractedData, ProcessingJob, ReportMemberLink, TeamMember, get_db
 from app.schemas.schemas import TeamMemberList, TeamMemberResponse, TeamMemberUpdate
 
 router = APIRouter(tags=["team"])
@@ -46,6 +46,7 @@ def _member_to_response(m: TeamMember, db: Session) -> TeamMemberResponse:
     reports = _reports_for_member(m.id, db)
     last_report = reports[0].created_at if reports else None
     summary = _resume_summary(m.resume_document_id, db)
+    hired_from = db.query(Candidate).filter_by(team_member_id=m.id).first()
     return TeamMemberResponse(
         id=m.id,
         project_id=m.project_id,
@@ -62,6 +63,8 @@ def _member_to_response(m: TeamMember, db: Session) -> TeamMemberResponse:
         resume_summary=summary,
         reports_count=len(reports),
         last_report_date=last_report,
+        hired_from_candidate_id=hired_from.id if hired_from else None,
+        hired_from_position_id=hired_from.position_id if hired_from else None,
     )
 
 

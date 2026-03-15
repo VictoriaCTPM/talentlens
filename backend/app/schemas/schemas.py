@@ -298,6 +298,7 @@ class CandidateResponse(BaseModel):
     scored_at: Optional[datetime] = None
     resume_extracted: Optional[dict[str, Any]] = None
     margin: Optional[dict[str, Any]] = None
+    team_member_id: Optional[int] = None  # set when candidate is hired and converted
 
     model_config = {"from_attributes": True}
 
@@ -372,6 +373,8 @@ class TeamMemberResponse(BaseModel):
     resume_summary: Optional[dict[str, Any]] = None
     reports_count: int = 0
     last_report_date: Optional[datetime] = None
+    hired_from_candidate_id: Optional[int] = None  # set when created from a hired candidate
+    hired_from_position_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
