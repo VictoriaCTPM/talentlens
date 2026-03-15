@@ -184,6 +184,7 @@ class Candidate(Base):
     interview_notes = Column(Text, nullable=True)
     client_feedback = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
+    rejection_data = Column(JSON, nullable=True)           # structured rejection info
     tags = Column(JSON, nullable=True)
     candidate_rate = Column(Float, nullable=True)
     candidate_rate_currency = Column(String(10), nullable=True, default="USD")

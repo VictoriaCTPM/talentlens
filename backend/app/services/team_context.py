@@ -220,6 +220,110 @@ class TeamContextService:
         finally:
             db.close()
 
+    def get_rejection_patterns(self, project_id: int) -> str:
+        """
+        Build a summary of rejection patterns for this project.
+        Used by Mode A (pitfalls) and Mode B (failure patterns).
+        """
+        from collections import Counter
+
+        from app.models.database import Candidate, Position, SessionLocal
+
+        db = SessionLocal()
+        try:
+            rejected = (
+                db.query(Candidate)
+                .join(Position, Candidate.position_id == Position.id)
+                .filter(
+                    Position.project_id == project_id,
+                    Candidate.status == "rejected",
+                    Candidate.rejection_data.isnot(None),
+                )
+                .order_by(Candidate.updated_at.desc())
+                .limit(20)
+                .all()
+            )
+
+            if not rejected:
+                return ""
+
+            type_counts: Counter = Counter()
+            stage_counts: Counter = Counter()
+            ai_accuracy = {"correct": 0, "incorrect": 0, "not_scored": 0}
+            common_details: list[str] = []
+            avg_time_in_pipeline: list[int] = []
+
+            for c in rejected:
+                data = c.rejection_data or {}
+                type_counts[data.get("rejection_type", "other")] += 1
+                stage_counts[data.get("stage", "other")] += 1
+
+                if data.get("was_ai_scored"):
+                    if data.get("ai_was_correct") is True:
+                        ai_accuracy["correct"] += 1
+                    elif data.get("ai_was_correct") is False:
+                        ai_accuracy["incorrect"] += 1
+                else:
+                    ai_accuracy["not_scored"] += 1
+
+                for detail in data.get("rejection_details", [])[:2]:
+                    common_details.append(detail)
+
+                days = data.get("time_in_pipeline_days")
+                if days is not None:
+                    avg_time_in_pipeline.append(days)
+
+            lines = [
+                f"## Rejection Patterns ({len(rejected)} rejected candidates)",
+                "",
+                "### Why candidates fail:",
+            ]
+            for rtype, count in type_counts.most_common(5):
+                pct = round(count / len(rejected) * 100)
+                lines.append(f"- {rtype}: {count} ({pct}%)")
+
+            lines += ["", "### At which stage they fail:"]
+            for stage, count in stage_counts.most_common(5):
+                pct = round(count / len(rejected) * 100)
+                lines.append(f"- {stage}: {count} ({pct}%)")
+
+            total_scored = ai_accuracy["correct"] + ai_accuracy["incorrect"]
+            if total_scored > 0:
+                accuracy_pct = round(ai_accuracy["correct"] / total_scored * 100)
+                lines += [
+                    "",
+                    f"### AI prediction accuracy: {accuracy_pct}% ({ai_accuracy['correct']}/{total_scored} correct)",
+                ]
+                if ai_accuracy["incorrect"] > 0:
+                    lines.append(
+                        f"AI was wrong {ai_accuracy['incorrect']} time(s) — predicted fit but candidate was rejected"
+                    )
+
+            if avg_time_in_pipeline:
+                avg_days = round(sum(avg_time_in_pipeline) / len(avg_time_in_pipeline))
+                lines += ["", f"### Average time before rejection: {avg_days} days"]
+
+            if common_details:
+                seen: set[str] = set()
+                unique_details = []
+                for d in common_details:
+                    d_lower = d.lower()
+                    if d_lower not in seen:
+                        seen.add(d_lower)
+                        unique_details.append(d)
+                if unique_details:
+                    lines += ["", "### Common rejection reasons:"]
+                    for d in unique_details[:6]:
+                        lines.append(f"- {d}")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.warning("get_rejection_patterns failed: %s", e)
+            return ""
+        finally:
+            db.close()
+
     # ── Private helpers ──────────────────────────────────────────────────────
 
     def _get_recent_work(self, member_id: int, db) -> str:

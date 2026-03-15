@@ -4,6 +4,7 @@ Candidates API — /api/positions/{position_id}/candidates and /api/candidates
 import hashlib
 import logging
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -21,6 +22,68 @@ from app.schemas.schemas import (
 )
 
 router = APIRouter(tags=["candidates"])
+
+
+# ── Rejection helpers ─────────────────────────────────────────────────────────
+
+def _detect_rejection_type(
+    rejection_reason: str | None,
+    client_feedback: str | None,
+    ai_verdict: str | None,
+    ai_score: float | None,
+    stage: str,
+) -> str:
+    """Auto-detect rejection type from available signals."""
+    reason_lower = (rejection_reason or "").lower()
+    feedback_lower = (client_feedback or "").lower()
+    combined = reason_lower + " " + feedback_lower
+
+    if any(w in combined for w in ("skill", "technical", "doesn't know", "no experience with", "lacks")):
+        return "skill_gap"
+    if any(w in combined for w in ("junior", "not enough experience", "years", "insufficient experience")):
+        return "experience_insufficient"
+    if any(w in combined for w in ("role", "not engineer", "not developer", "wrong background", "pm", "manager")):
+        return "role_mismatch"
+    if any(w in combined for w in ("culture", "communication", "soft skill", "team fit", "attitude")):
+        return "culture_fit"
+    if any(w in combined for w in ("overqualified", "too senior", "too expensive")):
+        return "overqualified"
+    if any(w in combined for w in ("salary", "rate", "compensation", "budget")):
+        return "salary_mismatch"
+    if any(w in combined for w in ("available", "location", "timezone", "start date", "timing")):
+        return "availability"
+    if any(w in combined for w in ("withdrew", "declined", "pulled out", "accepted another", "not interested")):
+        return "candidate_withdrew"
+    if any(w in combined for w in ("better candidate", "another candidate", "went with someone")):
+        return "better_candidate"
+    if stage == "client_interview" and feedback_lower:
+        return "client_rejected"
+    if ai_verdict == "not_recommended" and ai_score is not None and ai_score < 45:
+        return "skill_gap"
+    if ai_verdict == "risky":
+        return "experience_insufficient"
+    return "other"
+
+
+def _extract_rejection_details(rejection_reason: str | None) -> list[str]:
+    """Split free-text rejection reason into bullet points."""
+    if not rejection_reason:
+        return []
+    parts = re.split(r'[\n;]|\d+\.\s', rejection_reason)
+    return [p.strip() for p in parts if p.strip() and len(p.strip()) > 5][:5]
+
+
+def _detect_rejection_source(stage: str, client_feedback: str | None) -> str:
+    """Detect who made the rejection decision."""
+    if stage == "client_interview" and client_feedback:
+        return "client"
+    if stage == "screening":
+        return "recruiter"
+    if stage == "technical_interview":
+        return "internal_team"
+    if stage == "offer":
+        return "negotiation_failed"
+    return "recruiter"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -112,6 +175,7 @@ def _candidate_to_response(
         interview_notes=c.interview_notes,
         client_feedback=c.client_feedback,
         rejection_reason=c.rejection_reason,
+        rejection_data=c.rejection_data,
         tags=c.tags,
         candidate_rate=c.candidate_rate,
         candidate_rate_currency=c.candidate_rate_currency,
@@ -341,6 +405,78 @@ def update_candidate(candidate_id: int, body: CandidateUpdate, db: Session = Dep
                 position.status = "filled"
                 position.closed_at = datetime.utcnow()
                 logger.info("Position %d marked as filled", position.id)
+
+    if body.status == "rejected":
+        from app.services.context_cache import context_cache
+
+        position = db.get(Position, c.position_id)
+
+        stage_map = {
+            "new": "screening",
+            "screening": "screening",
+            "technical_interview": "technical_interview",
+            "client_interview": "client_interview",
+            "offer": "offer",
+        }
+        # previous_status is c.status BEFORE assignment above — read from events log as fallback
+        previous_status = c.status  # already updated to "rejected" above, use body default
+        # Try to determine stage from the last status_change event
+        last_status_event = (
+            db.query(CandidateEvent)
+            .filter_by(candidate_id=candidate_id, event_type="status_change")
+            .order_by(CandidateEvent.created_at.desc())
+            .first()
+        )
+        prior_status = (last_status_event.event_data or {}).get("from", "new") if last_status_event else "new"
+        stage = stage_map.get(prior_status, "other")
+
+        rejection_type = _detect_rejection_type(
+            rejection_reason=body.rejection_reason or c.rejection_reason,
+            client_feedback=c.client_feedback,
+            ai_verdict=c.ai_verdict,
+            ai_score=c.ai_score,
+            stage=stage,
+        )
+
+        ai_was_correct = None
+        if c.ai_score is not None:
+            if c.ai_verdict in ("not_recommended", "risky"):
+                ai_was_correct = True
+            elif c.ai_verdict in ("strong_fit", "moderate_fit"):
+                ai_was_correct = False
+
+        time_in_pipeline = (datetime.utcnow() - c.created_at).days if c.created_at else None
+
+        rejection_data = {
+            "stage": stage,
+            "rejection_type": rejection_type,
+            "rejection_details": _extract_rejection_details(body.rejection_reason or c.rejection_reason),
+            "was_ai_scored": c.ai_score is not None,
+            "ai_score_at_rejection": c.ai_score,
+            "ai_verdict_at_rejection": c.ai_verdict,
+            "ai_was_correct": ai_was_correct,
+            "position_title": position.title if position else None,
+            "position_level": position.level if position else None,
+            "rejection_source": _detect_rejection_source(stage, c.client_feedback),
+            "time_in_pipeline_days": time_in_pipeline,
+            "rejected_at": datetime.utcnow().isoformat(),
+        }
+        c.rejection_data = rejection_data
+
+        db.add(CandidateEvent(
+            candidate_id=c.id,
+            event_type="rejected",
+            event_data=rejection_data,
+        ))
+
+        # Invalidate context cache so future analyses pick up updated rejection patterns
+        if position:
+            context_cache.invalidate(position.project_id)
+
+        logger.info(
+            "Candidate %d rejected: stage=%s, type=%s, ai_correct=%s",
+            c.id, stage, rejection_type, ai_was_correct,
+        )
 
     db.commit()
     db.refresh(c)

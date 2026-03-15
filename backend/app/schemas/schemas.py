@@ -293,6 +293,7 @@ class CandidateResponse(BaseModel):
     candidate_rate: Optional[float] = None
     candidate_rate_currency: Optional[str] = None
     candidate_rate_period: Optional[str] = None
+    rejection_data: Optional[dict[str, Any]] = None
     # Computed enrichment (not from ORM, populated at query time)
     skill_match_score: Optional[float] = None
     scored_at: Optional[datetime] = None

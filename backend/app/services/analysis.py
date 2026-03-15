@@ -462,6 +462,17 @@ class AnalysisEngine:
         context_cache.set(project_id, "reports", value)
         return value
 
+    def _rejection_patterns(self, project_id: int) -> str:
+        """Return rejection patterns string, served from 5-min cache."""
+        cached = context_cache.get(project_id, "rejections")
+        if cached is not None:
+            return cached
+        value = self._team_ctx.get_rejection_patterns(project_id)
+        if len(value) > 4000:
+            value = value[:4000] + "\n[... truncated]"
+        context_cache.set(project_id, "rejections", value)
+        return value
+
     @staticmethod
     def _build_retrieval_query(
         mode: str,
@@ -567,8 +578,12 @@ class AnalysisEngine:
             max_tokens=3000,
         )
         team_context = self._team_context(project_id)
+        rejection_patterns = self._rejection_patterns(project_id)
         team_section = (
             f"\nCURRENT PROJECT TEAM:\n{team_context}" if team_context else ""
+        )
+        rejection_section = (
+            f"\n\nHISTORICAL REJECTION PATTERNS:\n{rejection_patterns}" if rejection_patterns else ""
         )
 
         prompt = f"""You are a senior hiring consultant. Produce THREE simultaneous analyses for this job description in one JSON response.
@@ -577,7 +592,7 @@ JOB DESCRIPTION DATA:
 {json.dumps(jd_data, indent=2)}
 
 HISTORICAL CONTEXT FROM PROJECT DOCUMENTS:
-{context}{team_section}
+{context}{team_section}{rejection_section}
 
 Return exactly this JSON structure with three top-level analysis sections:
 {{
@@ -623,7 +638,9 @@ Return exactly this JSON structure with three top-level analysis sections:
 
 Rules:
 - talent_brief: team-covered skills → "nice", missing → "must"; search_guidance specific to team gaps
-- historical_match: cite [Source N] for every insight; empty arrays if no history available
+- talent_brief pitfalls: if HISTORICAL REJECTION PATTERNS are provided, include the most common rejection reasons as specific pitfalls to avoid (cite percentages if available)
+- talent_brief historical_insights: if rejection patterns include AI accuracy data, include it as an insight
+- historical_match failure_patterns: if HISTORICAL REJECTION PATTERNS are provided, translate rejection type counts into failure patterns (e.g. "40% of rejections were skill_gap — candidates lacked hands-on ETL experience")
 - level_advisor: factor in existing team seniority; recommend level that balances composition
 - key_arguments: 3-6 per section
 - All lists must be arrays even if empty. Numbers must be integers/floats, not strings."""
@@ -723,6 +740,16 @@ Rules:
         if team_context:
             data_sources.append("team_context")
 
+        rejection_patterns = self._rejection_patterns(project_id)
+        rejection_section = ""
+        if rejection_patterns:
+            data_sources.append("rejection_patterns")
+            rejection_section = (
+                f"\n\nHISTORICAL REJECTION PATTERNS FOR THIS PROJECT:\n{rejection_patterns}\n"
+                "Use this to calibrate your assessment: if previous candidates were rejected for a specific skill gap "
+                "and this candidate has the same gap, flag it prominently in the gaps list and lower the score accordingly."
+            )
+
         prompt = f"""You are scoring a candidate against a job description using a STRICT STRUCTURED FORMULA.
 You MUST follow the steps below IN ORDER and calculate the final score mathematically. Do NOT estimate or "feel" the score.
 
@@ -734,7 +761,7 @@ JOB DESCRIPTION:
 
 HISTORICAL CONTEXT (similar hires, past outcomes):
 {context}{extra_context}
-{(f"{chr(10)}CURRENT PROJECT TEAM:{chr(10)}{team_context}" if team_context else "")}
+{(f"{chr(10)}CURRENT PROJECT TEAM:{chr(10)}{team_context}" if team_context else "")}{rejection_section}
 
 === SCORING STEPS (follow exactly) ===
 
