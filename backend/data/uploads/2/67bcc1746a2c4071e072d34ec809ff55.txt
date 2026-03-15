@@ -1,3 +1,0 @@
-Laura Chen — Lead Architect
-12 years. Python, AWS, Microservices, Kafka, Event Sourcing, GDPR compliance, Data governance
-Designs platform architecture.

@@ -1,4 +1,0 @@
-Alice Morgan — DevOps Engineer
-4 years. Jenkins, Docker, AWS, Ansible, Bash, Python
-Previous: CI/CD pipelines at UK retail company
-No Kubernetes operator experience, no Go.

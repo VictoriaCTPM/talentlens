@@ -1,4 +1,0 @@
-Position: Frontend Engineer
-Requirements: React, TypeScript
-Level: Mid
-Experience: 3+ years

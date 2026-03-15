@@ -1,3 +1,0 @@
-Priya Sharma — Mid Backend Engineer
-3 years. Python, Go, PostgreSQL, gRPC, Docker, Redis
-Builds internal tooling and platform APIs.

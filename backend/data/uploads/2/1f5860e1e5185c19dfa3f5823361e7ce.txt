@@ -1,7 +1,0 @@
-Job Description: ML Engineer
-Client: MedCore Systems SA
-Required: Python, PyTorch or TensorFlow, scikit-learn, MLflow or similar, Feature engineering, SQL
-Nice to have: Spark MLlib, Databricks, AWS SageMaker, Healthcare ML
-Experience: 4+ years ML engineering
-Responsibilities: Build and deploy ML models for patient risk scoring, anomaly detection, work with data engineering team, GDPR-compliant model development.
-Salary: €7,000-10,000/month

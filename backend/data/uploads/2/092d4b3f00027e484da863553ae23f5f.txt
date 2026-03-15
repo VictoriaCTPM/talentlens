@@ -1,4 +1,0 @@
-Maria Santos — Senior ML Engineer
-7 years. Python, PyTorch, TensorFlow, MLflow, Databricks, Spark MLlib, Healthcare ML, GDPR compliance
-Previous: Patient risk scoring at Siemens Healthineers (3 years), NLP at Philips Healthcare (2 years)
-PhD Medical Informatics

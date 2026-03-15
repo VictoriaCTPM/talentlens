@@ -1,3 +1,0 @@
-Name: Jane Smith
-Skills: Python, Django, PostgreSQL
-Experience: 4 years

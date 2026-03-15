@@ -1,3 +1,0 @@
-Job Description: QA Automation Engineer
-Required: Selenium, Python, Pytest, CI/CD, API testing
-Experience: 3+ years QA automation

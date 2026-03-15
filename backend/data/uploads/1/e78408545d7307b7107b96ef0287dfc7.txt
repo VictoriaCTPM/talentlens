@@ -1,4 +1,0 @@
-Piotr Wiśniewski — Senior DevOps
-Experience: 6 years
-Skills: Kubernetes, Terraform, AWS, CI/CD, GitLab, Prometheus, Grafana
-Manages cloud infra, deploys to AWS EKS.

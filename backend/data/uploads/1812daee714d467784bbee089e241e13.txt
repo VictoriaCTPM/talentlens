@@ -1,3 +1,0 @@
-Name: John Doe
-Skills: JavaScript, TypeScript
-Experience: 2 years

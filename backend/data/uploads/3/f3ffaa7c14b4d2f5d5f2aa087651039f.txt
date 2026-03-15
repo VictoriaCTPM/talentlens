@@ -1,7 +1,0 @@
-Job Description: Platform Engineer
-Client: CloudStack Ltd
-Required: Kubernetes (CKA preferred), Terraform, CI/CD (GitLab or GitHub Actions), Helm, Docker, Go or Python
-Nice to have: ArgoCD, Service mesh (Istio/Linkerd), Observability (Prometheus, Grafana, Jaeger)
-Experience: 4+ years platform/devops, 2+ years Kubernetes
-Responsibilities: Build and maintain internal developer platform, IDP tooling, Kubernetes operator development, enable 30 engineering teams.
-Salary: $7,000-11,000/month

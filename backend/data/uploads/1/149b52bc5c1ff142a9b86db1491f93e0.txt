@@ -1,4 +1,0 @@
-Marek Nowak — Mid Frontend Engineer
-Experience: 4 years
-Skills: React, TypeScript, Next.js, GraphQL, CSS
-Builds customer-facing payment UI.

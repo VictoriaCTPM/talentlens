@@ -1,3 +1,0 @@
-Tomasz Kaczmarek — Junior Frontend
-1.5 years. Vue.js, JavaScript, CSS, HTML
-Builds patient portal UI.

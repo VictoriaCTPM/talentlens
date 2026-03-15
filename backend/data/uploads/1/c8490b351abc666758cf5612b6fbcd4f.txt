@@ -1,8 +1,0 @@
-Job Description: Senior Backend Engineer
-Company: Novex Digital GmbH
-Role: Senior Backend Engineer — Payment Systems
-Required Skills: Python, FastAPI or Django, PostgreSQL, Redis, Docker, REST API design, high-throughput systems
-Nice to have: Kafka, gRPC, AWS Lambda
-Experience: 5+ years backend, 2+ years in fintech or payments
-Responsibilities: Design and implement payment processing microservices, ensure PCI-DSS compliance, 99.99% uptime, mentor junior developers.
-Salary: $8,000-12,000/month
