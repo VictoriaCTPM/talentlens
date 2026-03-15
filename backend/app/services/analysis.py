@@ -111,8 +111,15 @@ class LevelAdvisorResult(BaseModel):
     key_arguments: list[KeyArgument] = []
 
 
+class MustHaveSkillMatch(BaseModel):
+    skill: str
+    match_level: str = "none"   # hands_on / exposure / none
+    evidence: str = ""
+
+
 class SkillMatchDetail(BaseModel):
     score: int = 0
+    must_have_skills: list[MustHaveSkillMatch] = []
     matched: list[str] = []
     missing: list[str] = []
     partial: list[str] = []
@@ -120,8 +127,43 @@ class SkillMatchDetail(BaseModel):
 
 class ExperienceMatch(BaseModel):
     score: int = 0
-    relevant_years: int | None = None
+    relevant_years: float | None = None
+    required_years: float | None = None
+    role_type_match: bool = True
     notes: str = ""
+
+
+class RoleAlignment(BaseModel):
+    candidate_role_type: str = "unknown"
+    jd_role_type: str = "unknown"
+    is_match: bool = False
+    role_alignment_score: int = 10
+    score_capped: bool = False
+    note: str = ""
+
+
+class DomainMatch(BaseModel):
+    score: int = 0
+    industry_match: bool = False
+    relevant_knowledge: list[str] = []
+
+
+class SoftSkillsBreakdown(BaseModel):
+    score: int = 0
+    communication: int = 0
+    collaboration: int = 0
+    problem_solving: int = 0
+
+
+class ScoreBreakdown(BaseModel):
+    hard_skills_weighted: float = 0.0
+    experience_weighted: float = 0.0
+    domain_weighted: float = 0.0
+    soft_skills_weighted: float = 0.0
+    team_weighted: float = 0.0
+    raw_total: float = 0.0
+    role_cap_applied: bool = False
+    final_score: int = 0
 
 
 class TeamCompatibility(BaseModel):
@@ -146,10 +188,14 @@ class HistoricalComparison(BaseModel):
 class CandidateScoreResult(BaseModel):
     overall_score: int = 0              # 0-100
     verdict: str = "not_recommended"    # strong_fit / moderate_fit / risky / not_recommended
+    role_alignment: RoleAlignment = RoleAlignment()
     skill_match: SkillMatchDetail = SkillMatchDetail()
     experience_match: ExperienceMatch = ExperienceMatch()
+    domain_match: DomainMatch = DomainMatch()
+    soft_skills: SoftSkillsBreakdown = SoftSkillsBreakdown()
     team_compatibility: TeamCompatibility = TeamCompatibility()
     team_complementarity: TeamComplementarity = TeamComplementarity()
+    score_breakdown: ScoreBreakdown = ScoreBreakdown()
     strengths: list[str] = []
     gaps: list[str] = []
     historical_comparison: HistoricalComparison = HistoricalComparison()
@@ -163,7 +209,21 @@ class CandidateScoreResult(BaseModel):
 
     @model_validator(mode="after")
     def enforce_verdict_score_consistency(self) -> "CandidateScoreResult":
-        """Ensure verdict matches score thresholds. LLM sometimes gets this wrong."""
+        """Enforce verdict matches score AND role alignment."""
+        # Role alignment override: if role mismatch, force not_recommended and cap score
+        if self.role_alignment.role_alignment_score < 50:
+            if self.overall_score > 35:
+                logger.info(
+                    "Role cap applied: score %d → 35 (candidate=%s, jd=%s)",
+                    self.overall_score, self.role_alignment.candidate_role_type,
+                    self.role_alignment.jd_role_type,
+                )
+                self.overall_score = min(self.overall_score, 35)
+            self.verdict = "not_recommended"
+            self.role_alignment.score_capped = True
+            return self
+
+        # Standard verdict check
         score = self.overall_score
         expected = (
             "strong_fit" if score >= 85
@@ -233,10 +293,14 @@ class BatchCandidateScoreItem(BaseModel):
     candidate_id: int | str  # LLM may return string; resolved after parsing
     overall_score: int = 0
     verdict: str = "not_recommended"
+    role_alignment: RoleAlignment = RoleAlignment()
     skill_match: SkillMatchDetail = SkillMatchDetail()
     experience_match: ExperienceMatch = ExperienceMatch()
+    domain_match: DomainMatch = DomainMatch()
+    soft_skills: SoftSkillsBreakdown = SoftSkillsBreakdown()
     team_compatibility: TeamCompatibility = TeamCompatibility()
     team_complementarity: TeamComplementarity = TeamComplementarity()
+    score_breakdown: ScoreBreakdown = ScoreBreakdown()
     strengths: list[str] = []
     gaps: list[str] = []
     historical_comparison: HistoricalComparison = HistoricalComparison()
@@ -249,6 +313,19 @@ class BatchCandidateScoreItem(BaseModel):
 
     @model_validator(mode="after")
     def enforce_verdict_score_consistency(self) -> "BatchCandidateScoreItem":
+        # Role alignment override
+        if self.role_alignment.role_alignment_score < 50:
+            if self.overall_score > 35:
+                logger.info(
+                    "Batch role cap: score %d → 35 (candidate=%s, jd=%s)",
+                    self.overall_score, self.role_alignment.candidate_role_type,
+                    self.role_alignment.jd_role_type,
+                )
+                self.overall_score = min(self.overall_score, 35)
+            self.verdict = "not_recommended"
+            self.role_alignment.score_capped = True
+            return self
+
         score = self.overall_score
         expected = (
             "strong_fit" if score >= 85
@@ -646,7 +723,8 @@ Rules:
         if team_context:
             data_sources.append("team_context")
 
-        prompt = f"""You are scoring a candidate against a job description.
+        prompt = f"""You are scoring a candidate against a job description using a STRICT STRUCTURED FORMULA.
+You MUST follow the steps below IN ORDER and calculate the final score mathematically. Do NOT estimate or "feel" the score.
 
 CANDIDATE RESUME:
 {self._compress_resume(resume_data)}
@@ -656,57 +734,169 @@ JOB DESCRIPTION:
 
 HISTORICAL CONTEXT (similar hires, past outcomes):
 {context}{extra_context}
-{(f"{chr(10)}CURRENT PROJECT TEAM (use to assess whether this candidate fills a genuine skill gap or duplicates existing team members):{chr(10)}{team_context}" if team_context else "")}
+{(f"{chr(10)}CURRENT PROJECT TEAM:{chr(10)}{team_context}" if team_context else "")}
 
-Score {candidate_name} for {jd_title}. Respond with JSON:
+=== SCORING STEPS (follow exactly) ===
+
+STEP 1 — ROLE ALIGNMENT GATE
+Determine the candidate's ACTUAL role type from their experience (what they DID, not what they managed):
+  - engineer/developer = writes code, builds systems, hands-on technical IC
+  - manager = manages people, projects, timelines, stakeholders
+  - analyst = analyzes data, writes reports, but doesn't build pipelines
+  - designer, qa, devops, data_scientist, other
+
+Determine the JD's required role type from the responsibilities section.
+
+If these are DIFFERENT categories (e.g., candidate is "manager" but JD needs "engineer"):
+  → role_alignment_score = 10
+  → The MAXIMUM possible overall_score is 35, regardless of other scores
+  → verdict MUST be "not_recommended"
+  → You MUST state the mismatch in reasoning
+
+If SAME category:
+  → role_alignment_score = 100
+  → No cap on overall_score
+
+STEP 2 — HARD SKILLS MATCH (weight: 40%)
+List every must-have skill from the JD.
+For each skill, check the candidate's ACTUAL hands-on usage (not just listing it):
+  - "hands_on" (1.0): candidate USED this skill as an IC — evidence: they built/wrote/developed/debugged with it
+  - "exposure" (0.2): candidate LISTS the skill but only in management/oversight context (e.g., "managed teams using Python" ≠ "wrote Python code")
+  - "none" (0.0): not mentioned at all
+
+hard_skills_score = (sum of match values / number of must_have_skills) * 100
+
+CRITICAL RULE: "Comfortable working in technical environments with exposure to X" or "managed a team that used X" = EXPOSURE (0.2), NOT hands-on (1.0).
+
+STEP 3 — EXPERIENCE DEPTH (weight: 25%)
+Count years of experience in the SAME ROLE TYPE as the JD requires:
+  - If JD requires engineer: only count years as engineer/developer/IC contributor
+  - Years as PM managing engineers = 0 engineering years
+  - Years as analyst = 0 engineering years
+
+Compare to JD requirement:
+  - meets or exceeds = 100
+  - 75-99% = 75
+  - 50-74% = 50
+  - 25-49% = 25
+  - <25% or entirely wrong role type = 10
+
+STEP 4 — DOMAIN & CONTEXT (weight: 15%)
+  - Same industry as JD company (+40)
+  - Similar company size/stage (+20)
+  - Relevant domain-specific knowledge (+40)
+  Max 100.
+
+STEP 5 — SOFT SKILLS & CULTURE (weight: 10%)
+  - Communication evidence (+35)
+  - Collaboration evidence (+35)
+  - Problem-solving examples (+30)
+  Max 100.
+
+STEP 6 — TEAM COMPLEMENTARITY (weight: 10%)
+  - Fills genuine skill gap on current team (+50)
+  - Brings new expertise not present (+30)
+  - Seniority level fits team structure (+20)
+  Max 100. If no team data provided, default to 50.
+
+STEP 7 — CALCULATE FINAL SCORE
+raw_score = (hard_skills_score × 0.40) + (experience_score × 0.25) + (domain_score × 0.15) + (soft_skills_score × 0.10) + (team_score × 0.10)
+
+If role_alignment_score < 50:
+    overall_score = min(raw_score, 35)
+Else:
+    overall_score = round(raw_score)
+
+=== RESPOND WITH THIS EXACT JSON ===
 {{
-  "overall_score": 72,
+  "overall_score": <calculated integer 0-100>,
   "verdict": "strong_fit|moderate_fit|risky|not_recommended",
+  "role_alignment": {{
+    "candidate_role_type": "<detected type>",
+    "jd_role_type": "<detected type>",
+    "is_match": true,
+    "role_alignment_score": <10 or 100>,
+    "score_capped": false,
+    "note": "<explanation if mismatch>"
+  }},
   "skill_match": {{
-    "score": 80,
-    "matched": ["Python", "FastAPI"],
-    "missing": ["Kubernetes"],
-    "partial": ["AWS — has experience but not deep"]
+    "score": <hard_skills_score integer>,
+    "must_have_skills": [
+      {{"skill": "Python", "match_level": "hands_on|exposure|none", "evidence": "specific quote or fact from resume"}}
+    ],
+    "matched": ["skills with hands_on or exposure"],
+    "missing": ["skills with none"],
+    "partial": ["skills with exposure only"]
   }},
   "experience_match": {{
-    "score": 75,
-    "relevant_years": 5,
-    "notes": "relevant experience explanation [Source N]"
+    "score": <experience_score integer>,
+    "relevant_years": <number of years in matching role type>,
+    "required_years": <from JD>,
+    "role_type_match": true,
+    "notes": "explanation"
+  }},
+  "domain_match": {{
+    "score": <domain_score integer>,
+    "industry_match": true,
+    "relevant_knowledge": ["list"]
+  }},
+  "soft_skills": {{
+    "score": <soft_skills_score integer>,
+    "communication": <0-35>,
+    "collaboration": <0-35>,
+    "problem_solving": <0-30>
   }},
   "team_compatibility": {{
-    "score": 70,
-    "notes": "General culture and collaboration fit assessment"
+    "score": <team_score integer>,
+    "notes": "..."
   }},
   "team_complementarity": {{
-    "score": 75,
-    "fills_gaps": ["list of skills this candidate brings that the CURRENT TEAM genuinely lacks"],
-    "overlaps": ["list of skills this candidate has that already exist on the team — note member names"],
-    "team_dynamics": "How this person's seniority and experience level fits the existing team structure (e.g. could mentor juniors, needs senior oversight, balances team well)",
-    "recommendation": "Specific recommendation about how this candidate would function within the current team"
+    "score": <team_score integer>,
+    "fills_gaps": [],
+    "overlaps": [],
+    "team_dynamics": "...",
+    "recommendation": "..."
   }},
-  "strengths": ["concrete strength 1", "strength 2"],
-  "gaps": ["gap 1 — why it matters for this role"],
+  "score_breakdown": {{
+    "hard_skills_weighted": <score × 0.40>,
+    "experience_weighted": <score × 0.25>,
+    "domain_weighted": <score × 0.15>,
+    "soft_skills_weighted": <score × 0.10>,
+    "team_weighted": <score × 0.10>,
+    "raw_total": <sum>,
+    "role_cap_applied": false,
+    "final_score": <overall_score>
+  }},
+  "strengths": ["concrete strength with evidence"],
+  "gaps": ["gap — why it matters for THIS role"],
   "historical_comparison": {{
-    "similar_hire": "name or description from documents",
-    "project": "project name",
-    "outcome": "what happened with that hire [Source N]"
+    "similar_hire": "...",
+    "project": "...",
+    "outcome": "... [Source N]"
   }},
-  "confidence": 0.8,
+  "confidence": 0.0,
   "confidence_level": "HIGH|MEDIUM|LOW",
-  "confidence_explanation": "basis for confidence",
-  "sources": ["source descriptions"],
-  "reasoning": "3-5 sentence explanation of your overall assessment. Include: JD fit, and if team context is available — whether this candidate fills a gap or adds redundancy.",
+  "confidence_explanation": "...",
+  "sources": ["..."],
+  "reasoning": "3-5 sentences. MUST mention role alignment result first. Then hard skills assessment. Then overall recommendation.",
   "key_arguments": [
-    {{"point": "one sentence argument", "evidence": "specific data from documents", "impact": "positive|negative|neutral"}}
+    {{"point": "...", "evidence": "...", "impact": "positive|negative|neutral"}}
   ],
   "data_sources_used": {json.dumps(data_sources)}
 }}
 
-Verdicts: strong_fit (85+), moderate_fit (65-84), risky (45-64), not_recommended (<45).
-All scores are 0-100 integers.
-Factor team_complementarity into the overall_score: candidate who fills genuine team gaps → boost score; candidate who only duplicates existing skills (without need for capacity increase) → lower score.
-If CURRENT PROJECT TEAM is not provided, team_complementarity.score = 50, fills_gaps = [], overlaps = [], team_dynamics = "No team data available", recommendation = "Team composition unknown".
-key_arguments: list 3-6 specific arguments, each with point (one sentence), evidence (specific data), impact (positive/negative/neutral)."""
+VERDICT RULES:
+- If role_alignment_score < 50: verdict MUST be "not_recommended" regardless of score
+- Otherwise: strong_fit (85+), moderate_fit (65-84), risky (45-64), not_recommended (<45)
+
+ANTI-INFLATION RULES:
+- "Managed a team using Python" ≠ "Knows Python". Match level = exposure (0.2), not hands_on (1.0).
+- "Comfortable working in technical environments" = exposure to tech, not technical IC capability.
+- PM experience does NOT count as engineering experience, even if the PM worked on technical projects.
+- Domain expertise (same industry) cannot compensate for missing core technical skills.
+- Soft skills score CANNOT push overall_score above the role alignment cap.
+
+key_arguments: list 3-6 arguments with specific evidence from resume."""
 
         result = await self._call_with_validation(prompt, "D")
         return self._save_and_return(
@@ -866,7 +1056,7 @@ Rules:
 
         team_section = f"\nCURRENT PROJECT TEAM:\n{team_context}" if team_context else ""
 
-        prompt = f"""You are scoring {n} candidates against a job description.
+        prompt = f"""You are scoring {n} candidates against a job description using a STRICT STRUCTURED FORMULA.
 
 JOB DESCRIPTION:
 {json.dumps(jd_data, indent=2)}
@@ -876,22 +1066,52 @@ HISTORICAL CONTEXT (similar hires, past outcomes):
 
 CANDIDATES TO SCORE:
 {candidate_blocks}
-Return a JSON object with a "candidates" array. For each candidate, set "candidate_id" to the EXACT integer id number shown above (e.g., if it says "Candidate id=3", use "candidate_id": 3):
+
+SCORING RULES (apply to EACH candidate independently):
+
+1. ROLE ALIGNMENT: Determine if candidate's actual role type matches JD role type.
+   - If mismatch (e.g., manager vs engineer): score capped at 35, verdict = not_recommended
+   - "Managed teams using X" ≠ "hands-on with X"
+
+2. HARD SKILLS (40% weight): For each must-have skill, assess hands_on (1.0) vs exposure (0.2) vs none (0.0)
+
+3. EXPERIENCE (25% weight): Count only years in SAME role type as JD requires
+
+4. DOMAIN (15% weight): Industry and domain knowledge match
+
+5. SOFT SKILLS (10% weight): Communication, collaboration, problem-solving
+
+6. TEAM FIT (10% weight): Fills gaps, complements existing team
+
+Formula: raw = skills*0.4 + exp*0.25 + domain*0.15 + soft*0.1 + team*0.1
+If role mismatch: final = min(raw, 35)
+
+Return a JSON object with a "candidates" array. For each candidate, set "candidate_id" to the EXACT integer id number shown above:
 {{
   "candidates": [
     {{
       "candidate_id": <exact id from above>,
       "overall_score": 0-100,
       "verdict": "strong_fit|moderate_fit|risky|not_recommended",
-      "skill_match": {{"score": 0-100, "matched": [...], "missing": [...], "partial": [...]}},
-      "experience_match": {{"score": 0-100, "relevant_years": N, "notes": "..."}},
+      "role_alignment": {{"candidate_role_type": "...", "jd_role_type": "...", "is_match": true, "role_alignment_score": 10 or 100, "score_capped": false, "note": "..."}},
+      "skill_match": {{
+        "score": 0-100,
+        "must_have_skills": [{{"skill": "...", "match_level": "hands_on|exposure|none", "evidence": "..."}}],
+        "matched": [...], "missing": [...], "partial": [...]
+      }},
+      "experience_match": {{"score": 0-100, "relevant_years": N, "required_years": N, "role_type_match": true, "notes": "..."}},
+      "domain_match": {{"score": 0-100, "industry_match": true, "relevant_knowledge": [...]}},
+      "soft_skills": {{"score": 0-100, "communication": 0-35, "collaboration": 0-35, "problem_solving": 0-30}},
       "team_compatibility": {{"score": 0-100, "notes": "..."}},
       "team_complementarity": {{
         "score": 0-100,
-        "fills_gaps": ["skills this candidate brings that team lacks"],
-        "overlaps": ["skills this candidate has that team already has"],
-        "team_dynamics": "how they fit the existing team structure",
-        "recommendation": "specific recommendation"
+        "fills_gaps": [...], "overlaps": [...],
+        "team_dynamics": "...", "recommendation": "..."
+      }},
+      "score_breakdown": {{
+        "hard_skills_weighted": 0.0, "experience_weighted": 0.0, "domain_weighted": 0.0,
+        "soft_skills_weighted": 0.0, "team_weighted": 0.0,
+        "raw_total": 0.0, "role_cap_applied": false, "final_score": 0
       }},
       "strengths": ["strength 1"],
       "gaps": ["gap 1"],
@@ -900,7 +1120,7 @@ Return a JSON object with a "candidates" array. For each candidate, set "candida
       "confidence_level": "HIGH|MEDIUM|LOW",
       "confidence_explanation": "...",
       "sources": ["..."],
-      "reasoning": "2-3 sentences on fit and team complementarity",
+      "reasoning": "2-3 sentences. Start with role alignment result.",
       "key_arguments": [{{"point": "...", "evidence": "...", "impact": "positive|negative|neutral"}}]
     }}
   ]
@@ -908,8 +1128,7 @@ Return a JSON object with a "candidates" array. For each candidate, set "candida
 
 Verdicts: strong_fit (85+), moderate_fit (65-84), risky (45-64), not_recommended (<45).
 Evaluate each candidate independently. Include ALL {n} candidates.
-key_arguments: 2-4 per candidate.
-Factor team_complementarity into overall_score: gap-fillers get a boost, duplicates get a lower score."""
+key_arguments: 2-4 per candidate."""
 
         # ~600 tokens per candidate output + 500 buffer, cap at 8192
         batch_max_tokens = min(len(batch) * 600 + 500, 8192)
