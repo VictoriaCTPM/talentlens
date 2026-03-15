@@ -107,7 +107,7 @@ async def _process_document(document_id: int, job_id: int) -> None:
 
         # ── 3. Classify + extract structured data (single LLM call) ─────────
         llm = get_llm_client()
-        result = await classify_and_extract(raw_text, doc.original_filename, llm)
+        result = await classify_and_extract(raw_text, doc.original_filename, llm, doc_type_hint=doc.doc_type)
         doc_type = result["doc_type"]
         extracted = result["extracted"]
         doc.doc_type = doc_type

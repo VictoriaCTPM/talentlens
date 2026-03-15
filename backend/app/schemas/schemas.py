@@ -255,7 +255,6 @@ class CandidateUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     years_of_experience: Optional[float] = None
-    salary_expectation: Optional[str] = None
     location: Optional[str] = None
     availability: Optional[str] = None
     recruiter_notes: Optional[str] = None
@@ -284,7 +283,6 @@ class CandidateResponse(BaseModel):
     # Profile fields
     phone: Optional[str] = None
     years_of_experience: Optional[float] = None
-    salary_expectation: Optional[str] = None
     location: Optional[str] = None
     availability: Optional[str] = None
     recruiter_notes: Optional[str] = None

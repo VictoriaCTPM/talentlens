@@ -105,7 +105,6 @@ def _candidate_to_response(
         updated_at=c.updated_at,
         phone=c.phone,
         years_of_experience=c.years_of_experience,
-        salary_expectation=c.salary_expectation,
         location=c.location,
         availability=c.availability,
         recruiter_notes=c.recruiter_notes,
@@ -308,7 +307,7 @@ def update_candidate(candidate_id: int, body: CandidateUpdate, db: Session = Dep
 
     for field in [
         "name", "notes", "email", "phone",
-        "years_of_experience", "salary_expectation", "location", "availability",
+        "years_of_experience", "location", "availability",
         "recruiter_notes", "interview_notes", "client_feedback",
         "rejection_reason", "tags",
         "candidate_rate", "candidate_rate_currency", "candidate_rate_period",

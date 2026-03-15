@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 
 from app.services.context_cache import context_cache
 from app.services.llm.base import LLMProvider
@@ -17,6 +17,16 @@ from app.services.team_context import TeamContextService
 logger = logging.getLogger(__name__)
 
 _PROMPT_VERSION = "1.0"
+
+# Token budget per mode — must fit within 12K TPM total (input + output)
+_MAX_TOKENS_MAP: dict[str, int] = {
+    "A": 2048,
+    "B": 2048,
+    "C": 1536,
+    "D": 2048,
+    "E": 2560,
+    "PI": 4096,  # 3 analyses combined
+}
 
 # ── Anti-hallucination boilerplate injected into every prompt ────────────────
 _GROUNDING = """CRITICAL RULES:
@@ -150,6 +160,24 @@ class CandidateScoreResult(BaseModel):
     key_arguments: list[KeyArgument] = []
     data_sources_used: list[str] = []
 
+    @model_validator(mode="after")
+    def enforce_verdict_score_consistency(self) -> "CandidateScoreResult":
+        """Ensure verdict matches score thresholds. LLM sometimes gets this wrong."""
+        score = self.overall_score
+        expected = (
+            "strong_fit" if score >= 85
+            else "moderate_fit" if score >= 65
+            else "risky" if score >= 45
+            else "not_recommended"
+        )
+        if self.verdict != expected:
+            logger.info(
+                "Corrected verdict: LLM said '%s' for score %d, should be '%s'",
+                self.verdict, score, expected,
+            )
+            self.verdict = expected
+        return self
+
 
 # ── Mode E — JD Reality Check schemas ────────────────────────────────────────
 
@@ -201,7 +229,7 @@ class PositionIntelligenceResult(BaseModel):
 # ── Batch candidate scoring schemas ───────────────────────────────────────────
 
 class BatchCandidateScoreItem(BaseModel):
-    candidate_id: int
+    candidate_id: int | str  # LLM may return string; resolved after parsing
     overall_score: int = 0
     verdict: str = "not_recommended"
     skill_match: SkillMatchDetail = SkillMatchDetail()
@@ -217,6 +245,23 @@ class BatchCandidateScoreItem(BaseModel):
     sources: list[str] = []
     reasoning: str = ""
     key_arguments: list[KeyArgument] = []
+
+    @model_validator(mode="after")
+    def enforce_verdict_score_consistency(self) -> "BatchCandidateScoreItem":
+        score = self.overall_score
+        expected = (
+            "strong_fit" if score >= 85
+            else "moderate_fit" if score >= 65
+            else "risky" if score >= 45
+            else "not_recommended"
+        )
+        if self.verdict != expected:
+            logger.info(
+                "Batch: corrected verdict '%s' → '%s' for score %d",
+                self.verdict, expected, score,
+            )
+            self.verdict = expected
+        return self
 
 
 class BatchScoringResult(BaseModel):
@@ -321,6 +366,9 @@ class AnalysisEngine:
         if cached is not None:
             return cached
         value = self._team_ctx.get_team_context(project_id)
+        # Cap to ~1500 tokens (~6000 chars) to stay within 12K TPM budget
+        if len(value) > 6000:
+            value = value[:6000] + "\n[... team context truncated for token budget ...]"
         context_cache.set(project_id, "team", value)
         return value
 
@@ -330,6 +378,9 @@ class AnalysisEngine:
         if cached is not None:
             return cached
         value = self._team_ctx.get_reports_context(project_id)
+        # Cap to ~1500 tokens (~6000 chars) to stay within 12K TPM budget
+        if len(value) > 6000:
+            value = value[:6000] + "\n[... reports context truncated for token budget ...]"
         context_cache.set(project_id, "reports", value)
         return value
 
@@ -431,7 +482,7 @@ class AnalysisEngine:
             ),
             project_id=str(project_id),
             doc_types=["jd", "job_request", "report", "interview", "resume"],
-            max_tokens=8000,
+            max_tokens=3000,
         )
         team_context = self._team_context(project_id)
         team_section = (
@@ -574,7 +625,7 @@ Rules:
             ),
             project_id=str(project_id),
             doc_types=["resume", "interview", "report"],
-            max_tokens=5000,
+            max_tokens=2000,
         )
 
         extra_context = ""
@@ -677,7 +728,7 @@ key_arguments: list 3-6 specific arguments, each with point (one sentence), evid
             ),
             project_id=str(project_id),
             doc_types=["report", "client_report", "resume", "interview"],
-            max_tokens=5000,
+            max_tokens=2000,
         )
         team_context = self._team_context(project_id)
         reports_context = self._reports_context(project_id)
@@ -771,7 +822,7 @@ Rules:
             ),
             project_id=str(project_id),
             doc_types=["resume", "interview", "report"],
-            max_tokens=4000,
+            max_tokens=2000,
         )
         team_context = self._team_context(project_id)
 
@@ -799,13 +850,13 @@ Rules:
         n = len(batch)
 
         candidate_blocks = ""
-        for idx, c in enumerate(batch, 1):
+        for c in batch:
             compressed = self._compress_resume(c.get("resume_data", {}))
-            lines = [f"CANDIDATE_{idx} (id={c['id']}):", f"  {compressed}"]
+            lines = [f"--- Candidate id={c['id']} ---", compressed]
             if c.get("interview_notes"):
-                lines.append(f"  Interview: {str(c['interview_notes'])[:400]}")
+                lines.append(f"Interview: {str(c['interview_notes'])[:400]}")
             if c.get("client_feedback"):
-                lines.append(f"  Client feedback: {str(c['client_feedback'])[:200]}")
+                lines.append(f"Client feedback: {str(c['client_feedback'])[:200]}")
             candidate_blocks += "\n".join(lines) + "\n\n"
 
         team_section = f"\nCURRENT PROJECT TEAM:\n{team_context}" if team_context else ""
@@ -820,7 +871,7 @@ HISTORICAL CONTEXT (similar hires, past outcomes):
 
 CANDIDATES TO SCORE:
 {candidate_blocks}
-Return a JSON object with a "candidates" array — one entry per candidate using their EXACT id values:
+Return a JSON object with a "candidates" array. For each candidate, set "candidate_id" to the EXACT integer id number shown above (e.g., if it says "Candidate id=3", use "candidate_id": 3):
 {{
   "candidates": [
     {{
@@ -855,13 +906,16 @@ Evaluate each candidate independently. Include ALL {n} candidates.
 key_arguments: 2-4 per candidate.
 Factor team_complementarity into overall_score: gap-fillers get a boost, duplicates get a lower score."""
 
+        # ~600 tokens per candidate output + 500 buffer, cap at 8192
+        batch_max_tokens = min(len(batch) * 600 + 500, 8192)
+
         validated: BatchScoringResult | None = None
         for attempt in range(2):
             response = await self._llm.generate(
                 prompt=prompt,
                 system_prompt=_SYSTEM_PROMPT,
                 temperature=0.1,
-                max_tokens=6000,
+                max_tokens=batch_max_tokens,
             )
             try:
                 raw = _parse_json(response)
@@ -880,21 +934,53 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
         if validated is None:
             return {}
 
+        import re as _re
+
         output: dict[int, dict[str, Any]] = {}
-        for item in validated.candidates:
+        for idx, item in enumerate(validated.candidates):
             item_dict = item.model_dump()
-            cand_id = item_dict.pop("candidate_id")
-            c_data = next((c for c in batch if c["id"] == cand_id), None)
-            if not c_data:
-                logger.warning("Batch result has unknown candidate_id=%d, skipping", cand_id)
+            raw_cand_id = item_dict.pop("candidate_id")
+
+            # Try direct numeric match first
+            try:
+                numeric_id = int(raw_cand_id)
+                c_data = next((c for c in batch if c["id"] == numeric_id), None)
+            except (ValueError, TypeError):
+                c_data = None
+
+            # Fallback: parse index from "CANDIDATE_1" style strings
+            if c_data is None and isinstance(raw_cand_id, str):
+                m = _re.search(r"(\d+)", str(raw_cand_id))
+                if m:
+                    candidate_idx = int(m.group(1)) - 1
+                    if 0 <= candidate_idx < len(batch):
+                        c_data = batch[candidate_idx]
+                        logger.info(
+                            "Resolved candidate_id '%s' by index → id=%d",
+                            raw_cand_id, c_data["id"],
+                        )
+
+            # Last resort: positional match
+            if c_data is None and idx < len(batch):
+                c_data = batch[idx]
+                logger.warning(
+                    "Could not resolve candidate_id '%s', using positional match → id=%d",
+                    raw_cand_id, c_data["id"],
+                )
+
+            if c_data is None:
+                logger.error("Could not resolve candidate_id='%s', skipping", raw_cand_id)
                 continue
+
+            cand_id = c_data["id"]
+            _ = cand_id  # used below
             saved = self._save_and_return(
                 mode="D",
                 project_id=project_id,
                 input_doc_ids=[c_data["resume_document_id"], jd_document_id],
                 result=item_dict,
             )
-            output[cand_id] = saved
+            output[c_data["id"]] = saved
         return output
 
     def _compress_resume(self, data: dict[str, Any]) -> str:
@@ -926,7 +1012,23 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
 
         exp_list = data.get("work_experience") or data.get("experience") or []
         if isinstance(exp_list, list):
-            for job in exp_list[:3]:
+            import re as _re2
+
+            def _extract_end_year(job: dict) -> int:
+                duration = str(job.get("duration") or job.get("period") or "")
+                years = _re2.findall(r"20\d{2}", duration)
+                if years:
+                    return max(int(y) for y in years)
+                if any(w in duration.lower() for w in ("present", "current", "now", "ongoing")):
+                    return 9999
+                return 0
+
+            sorted_exp = sorted(
+                exp_list,
+                key=lambda j: _extract_end_year(j) if isinstance(j, dict) else 0,
+                reverse=True,
+            )
+            for job in sorted_exp[:3]:
                 if isinstance(job, dict):
                     title = job.get("role") or job.get("title") or job.get("position", "")
                     company = job.get("company", "")
@@ -951,6 +1053,8 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
         loc = data.get("location")
         if loc:
             lines.append(f"Location: {loc}")
+
+        lines.append("[NOTE: This is a compressed summary. Skills or experience not listed may still be present in the full resume.]")
 
         return "\n".join(lines)[:2000]
 
@@ -996,7 +1100,7 @@ Factor team_complementarity into overall_score: gap-fillers get a boost, duplica
                 prompt=full_prompt,
                 system_prompt=_SYSTEM_PROMPT,
                 temperature=0.1,
-                max_tokens=2048,
+                max_tokens=_MAX_TOKENS_MAP.get(mode, 2048),
             )
             try:
                 raw = _parse_json(response)

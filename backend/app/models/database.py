@@ -85,7 +85,7 @@ class AnalysisResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    analysis_mode = Column(String(1), nullable=False)  # A/B/C/D
+    analysis_mode = Column(String(5), nullable=False)  # A/B/C/D/E/PI
     input_document_ids = Column(JSON, nullable=False)   # list of document ids
     result_data = Column(JSON, nullable=False)
     confidence_score = Column(Float, nullable=True)
@@ -176,7 +176,6 @@ class Candidate(Base):
     # Profile fields (auto-populated from resume ExtractedData)
     phone = Column(String(50), nullable=True)
     years_of_experience = Column(Float, nullable=True)
-    salary_expectation = Column(String(100), nullable=True)
     location = Column(String(255), nullable=True)
     availability = Column(String(100), nullable=True)
     recruiter_notes = Column(Text, nullable=True)
@@ -214,7 +213,6 @@ class TeamMember(Base):
     name = Column(String(255), nullable=False)
     role = Column(String(255), nullable=False)        # e.g. "Senior Backend Developer"
     level = Column(String(20), nullable=True)          # junior/mid/senior/lead
-    email = Column(String(255), nullable=True)
     start_date = Column(DateTime, nullable=True)
     status = Column(String(20), default="active")     # active / offboarded
     resume_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)

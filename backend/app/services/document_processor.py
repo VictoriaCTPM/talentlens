@@ -116,13 +116,54 @@ Rules:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+def _build_extraction_only_prompt(text: str, filename: str, doc_type: str) -> str:
+    """Build a prompt that only extracts data (no classification needed)."""
+    max_chars = 8000
+    truncated = text[:max_chars] + ("\n[... truncated ...]" if len(text) > max_chars else "")
+
+    schema_fields = {
+        "resume": "name, email, phone, skills (list), experience (list of {company, role, duration, description}), education (list of {institution, degree, year}), summary",
+        "jd": "title, company, department, level (junior/mid/senior/lead), required_skills (list), nice_to_have_skills (list), responsibilities (list), requirements (list)",
+        "job_request": "title, company, department, level (junior/mid/senior/lead), required_skills (list), nice_to_have_skills (list), responsibilities (list), requirements (list)",
+        "report": "developer_name, project_name, week_date, tasks_completed (list), tasks_in_progress (list), blockers (list), hours_logged (number or null)",
+        "client_report": "developer_name, project_name, week_date, tasks_completed (list), tasks_in_progress (list), blockers (list), hours_logged (number or null)",
+        "interview": "candidate_name, position, interview_date, interviewer, technical_score (1-10), communication_score (1-10), verdict (pass/fail/maybe), notes, strengths (list), weaknesses (list)",
+    }
+    fields = schema_fields.get(doc_type, "")
+
+    return f"""Extract structured data from this {doc_type} document.
+
+FILENAME: {filename}
+
+DOCUMENT TEXT:
+{truncated}
+
+This document is a {doc_type}. Extract the following fields into a JSON object:
+{fields}
+
+Respond with JSON only:
+{{
+  "extracted": {{
+    <fields as described above>
+  }}
+}}
+
+Rules:
+- Use null for missing fields, never omit keys.
+- All list fields must be arrays even if empty.
+- Do not add fields outside the schema."""
+
+
 async def classify_and_extract(
     text: str,
     filename: str,
     llm_client: LLMProvider,
+    doc_type_hint: str | None = None,
 ) -> dict[str, Any]:
     """
     Single LLM call: classify document type + extract structured data.
+
+    If doc_type_hint is provided and valid, skips classification (saves tokens).
 
     Returns:
         {
@@ -135,6 +176,35 @@ async def classify_and_extract(
         ValueError: if both attempts fail to produce valid structured output.
     """
     raw_text = text
+
+    # If caller provides a trusted doc_type, skip classification
+    if doc_type_hint and doc_type_hint.lower().strip() in _SCHEMA_MAP:
+        trusted_type = doc_type_hint.lower().strip()
+        logger.info("Using provided doc_type_hint='%s', skipping classification", trusted_type)
+        for attempt in range(2):
+            prompt = _build_extraction_only_prompt(text, filename, trusted_type)
+            response = await llm_client.generate(
+                prompt=prompt,
+                system_prompt=_SYSTEM_PROMPT,
+                temperature=0.0,
+                max_tokens=2048,
+            )
+            try:
+                data = _parse_json(response)
+                extracted_raw = data.get("extracted", data)
+                schema_cls = _SCHEMA_MAP[trusted_type]
+                extracted = schema_cls(**extracted_raw)
+                return {
+                    "doc_type": trusted_type,
+                    "extracted": extracted.model_dump(),
+                    "raw_text": raw_text,
+                }
+            except (ValidationError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                logger.warning("Hint-based extraction attempt %d failed: %s", attempt + 1, exc)
+                if attempt == 1:
+                    logger.warning("Hint-based extraction failed, falling back to full classify+extract")
+                    break
+
     error_feedback = ""
 
     for attempt in range(2):

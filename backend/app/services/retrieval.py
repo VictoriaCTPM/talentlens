@@ -151,12 +151,20 @@ class RetrievalService:
         max_chars = max_tokens * 4
 
         if doc_types:
-            # Search each type separately, then re-rank by combined score
+            # Search each type separately, deduplicate, then re-rank by combined score
             all_results: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
             for dt in doc_types:
-                all_results.extend(
-                    self.hybrid_search(query, project_id=project_id, doc_type=dt, top_k=5)
-                )
+                for r in self.hybrid_search(query, project_id=project_id, doc_type=dt, top_k=5):
+                    if r["chunk_id"] not in seen_ids:
+                        seen_ids.add(r["chunk_id"])
+                        all_results.append(r)
+                    else:
+                        # Keep the higher-scoring version
+                        for i, existing in enumerate(all_results):
+                            if existing["chunk_id"] == r["chunk_id"] and r["combined_score"] > existing["combined_score"]:
+                                all_results[i] = r
+                                break
             all_results.sort(key=lambda r: r["combined_score"], reverse=True)
             results = all_results[:15]
         else:
