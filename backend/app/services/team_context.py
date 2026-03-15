@@ -106,7 +106,7 @@ class TeamContextService:
         actually been working on, based on weekly reports and interview notes.
         Used for the JD Reality Check and context enrichment.
         """
-        from app.models.database import Document, ExtractedData, SessionLocal
+        from app.models.database import Document, ExtractedData, ReportMemberLink, SessionLocal
 
         db = SessionLocal()
         try:
@@ -123,48 +123,96 @@ class TeamContextService:
                 q = q.filter(Document.team_member_id == member_id)
 
             reports = q.limit(10).all()
-            if not reports:
-                return ""
-
-            lines: list[str] = [
-                f"## Weekly Reports Summary ({len(reports)} reports):",
-                "",
-            ]
+            lines: list[str] = []
+            seen_doc_ids: set[int] = set()
 
             for doc in reports:
-                ed = (
-                    db.query(ExtractedData)
-                    .filter_by(document_id=doc.id)
-                    .first()
-                )
+                seen_doc_ids.add(doc.id)
+                ed = db.query(ExtractedData).filter_by(document_id=doc.id).first()
                 if not ed:
                     continue
                 data = ed.structured_data or {}
                 date_str = doc.created_at.strftime("%b %d") if doc.created_at else ""
 
-                # Extract key info from report
-                author = data.get("author") or data.get("developer_name") or ""
-                next_steps = data.get("next_steps") or []
-                blockers = data.get("blockers") or []
-                submitted = data.get("candidates_submitted") or []
-                placed = data.get("candidates_placed") or []
+                member_sections = data.get("member_sections", [])
+                if member_sections:
+                    # Consolidated report — emit one line per section
+                    for section in member_sections:
+                        parts = []
+                        name = section.get("member_name", "")
+                        if name:
+                            parts.append(f"Member: {name}")
+                        tasks_done = section.get("tasks_completed", [])
+                        tasks_ip = section.get("tasks_in_progress", [])
+                        blockers = section.get("blockers", [])
+                        if tasks_done:
+                            parts.append(f"Done: {'; '.join(str(t) for t in tasks_done[:2])}")
+                        if tasks_ip:
+                            parts.append(f"In progress: {'; '.join(str(t) for t in tasks_ip[:2])}")
+                        if blockers:
+                            parts.append(f"Blockers: {'; '.join(str(b) for b in blockers[:1])}")
+                        if parts:
+                            lines.append(f"[{date_str}] {' | '.join(parts)}")
+                    # Overall blockers/next steps
+                    for b in data.get("overall_blockers", [])[:1]:
+                        lines.append(f"[{date_str}] Team blocker: {b}")
+                else:
+                    # Individual / legacy report format
+                    author = data.get("author") or data.get("developer_name") or ""
+                    blockers = data.get("blockers") or []
+                    next_steps = data.get("next_steps") or []
+                    submitted = data.get("candidates_submitted") or []
+                    placed = data.get("candidates_placed") or []
+                    parts = []
+                    if author:
+                        parts.append(f"Author: {author}")
+                    if submitted:
+                        parts.append(f"Submitted: {len(submitted)} candidate(s)")
+                    if placed:
+                        parts.append(f"Placed: {len(placed)}")
+                    if blockers:
+                        parts.append(f"Blockers: {'; '.join(str(b) for b in blockers[:2])}")
+                    if next_steps:
+                        parts.append(f"Next steps: {'; '.join(str(s) for s in next_steps[:2])}")
+                    if parts:
+                        lines.append(f"[{date_str}] {' | '.join(parts)}")
 
+            # Also read consolidated report links not yet seen
+            links_q = (
+                db.query(ReportMemberLink)
+                .join(Document, ReportMemberLink.document_id == Document.id)
+                .filter(Document.project_id == project_id)
+                .order_by(ReportMemberLink.created_at.desc())
+            )
+            if member_id is not None:
+                links_q = links_q.filter(ReportMemberLink.team_member_id == member_id)
+            for link in links_q.limit(20).all():
+                if link.document_id in seen_doc_ids:
+                    continue
+                seen_doc_ids.add(link.document_id)
+                section = link.section_data or {}
+                doc = db.get(Document, link.document_id)
+                date_str = doc.created_at.strftime("%b %d") if doc and doc.created_at else ""
                 parts = []
-                if author:
-                    parts.append(f"Author: {author}")
-                if submitted:
-                    parts.append(f"Submitted: {len(submitted)} candidate(s)")
-                if placed:
-                    parts.append(f"Placed: {len(placed)}")
+                name = link.member_name_in_report or ""
+                if name:
+                    parts.append(f"Member: {name}")
+                tasks_done = section.get("tasks_completed", [])
+                tasks_ip = section.get("tasks_in_progress", [])
+                blockers = section.get("blockers", [])
+                if tasks_done:
+                    parts.append(f"Done: {'; '.join(str(t) for t in tasks_done[:2])}")
+                if tasks_ip:
+                    parts.append(f"In progress: {'; '.join(str(t) for t in tasks_ip[:2])}")
                 if blockers:
-                    parts.append(f"Blockers: {'; '.join(str(b) for b in blockers[:2])}")
-                if next_steps:
-                    parts.append(f"Next steps: {'; '.join(str(s) for s in next_steps[:2])}")
-
+                    parts.append(f"Blockers: {'; '.join(str(b) for b in blockers[:1])}")
                 if parts:
                     lines.append(f"[{date_str}] {' | '.join(parts)}")
 
-            return "\n".join(lines)
+            if not lines:
+                return ""
+
+            return f"## Weekly Reports Summary ({len(lines)} entries):\n\n" + "\n".join(lines)
 
         except Exception as e:
             logger.warning("TeamContextService.get_reports_context failed: %s", e)
@@ -176,9 +224,12 @@ class TeamContextService:
 
     def _get_recent_work(self, member_id: int, db) -> str:
         """Extract a one-line summary of what this member is working on from reports."""
-        from app.models.database import Document, ExtractedData
+        from app.models.database import Document, ExtractedData, ReportMemberLink
 
-        reports = (
+        items: list[str] = []
+
+        # 1. Individual reports (Document.team_member_id — old path)
+        individual_reports = (
             db.query(Document)
             .filter(
                 Document.team_member_id == member_id,
@@ -189,18 +240,41 @@ class TeamContextService:
             .limit(2)
             .all()
         )
-
-        items: list[str] = []
-        for doc in reports:
+        for doc in individual_reports:
             ed = db.query(ExtractedData).filter_by(document_id=doc.id).first()
             if not ed:
                 continue
             data = ed.structured_data or {}
-            next_steps = data.get("next_steps") or []
-            for s in next_steps[:1]:
-                text = str(s).strip()
-                if text and len(text) < 120:
-                    items.append(text)
+            member_sections = data.get("member_sections", [])
+            if member_sections:
+                for s in member_sections[:1]:
+                    tasks = s.get("tasks_in_progress") or s.get("tasks_completed") or []
+                    for t in tasks[:1]:
+                        text = str(t).strip()
+                        if text and len(text) < 120:
+                            items.append(text)
+            else:
+                for t in (data.get("tasks_in_progress") or data.get("tasks_completed") or [])[:1]:
+                    text = str(t).strip()
+                    if text and len(text) < 120:
+                        items.append(text)
+
+        # 2. Consolidated report links (ReportMemberLink — new path)
+        if not items:
+            links = (
+                db.query(ReportMemberLink)
+                .filter_by(team_member_id=member_id)
+                .order_by(ReportMemberLink.created_at.desc())
+                .limit(2)
+                .all()
+            )
+            for link in links:
+                section = link.section_data or {}
+                tasks = section.get("tasks_in_progress") or section.get("tasks_completed") or []
+                for t in tasks[:1]:
+                    text = str(t).strip()
+                    if text and len(text) < 120:
+                        items.append(text)
 
         return "; ".join(items) if items else ""
 
@@ -232,8 +306,16 @@ class TeamContextService:
             if not ed:
                 continue
             data = ed.structured_data or {}
-            all_blockers.extend(data.get("blockers") or [])
-            all_next_steps.extend(data.get("next_steps") or [])
+            # New consolidated format
+            member_sections = data.get("member_sections", [])
+            if member_sections:
+                for section in member_sections:
+                    all_blockers.extend(section.get("blockers") or [])
+                all_blockers.extend(data.get("overall_blockers") or [])
+                all_next_steps.extend(data.get("overall_next_steps") or [])
+            else:
+                all_blockers.extend(data.get("blockers") or [])
+                all_next_steps.extend(data.get("next_steps") or [])
             placed = data.get("candidates_placed") or []
             placed_count += len(placed)
 

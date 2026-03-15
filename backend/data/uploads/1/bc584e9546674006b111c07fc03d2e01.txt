@@ -1,0 +1,18 @@
+Alice Smith
+Senior Software Engineer
+alice@example.com | +1-555-0100
+
+SUMMARY
+Experienced Python developer with 4 years of hands-on backend development experience.
+
+EXPERIENCE
+TechCo - Senior Software Engineer (2020-2024)
+- Built and maintained Python REST APIs using FastAPI and PostgreSQL
+- Led API design for 3 major product features
+- Mentored 2 junior developers
+
+SKILLS
+Python, FastAPI, PostgreSQL, Docker, Git, SQL, REST API design
+
+EDUCATION
+MIT - BSc Computer Science (2018)

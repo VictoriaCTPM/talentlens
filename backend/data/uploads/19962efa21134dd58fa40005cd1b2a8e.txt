@@ -1,0 +1,10 @@
+Bob Williams
+Backend Developer
+bob@example.com
+
+EXPERIENCE
+Current Co - Backend Developer (2021-present)
+- Python, Django, MySQL backend work
+
+SKILLS
+Python, Django, MySQL, REST APIs

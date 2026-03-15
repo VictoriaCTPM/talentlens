@@ -11,10 +11,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.models.database import Document, ExtractedData, ProcessingJob, TeamMember, get_db
+import logging
+
+from app.models.database import Document, ExtractedData, ProcessingJob, ReportMemberLink, TeamMember, get_db
 from app.schemas.schemas import TeamMemberList, TeamMemberResponse, TeamMemberUpdate
 
 router = APIRouter(tags=["team"])
+logger = logging.getLogger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -352,21 +355,84 @@ def sync_skills(member_id: int, db: Session = Depends(get_db)):
 
 # ── Utility (called from job_queue after processing) ──────────────────────────
 
+def _fuzzy_match_member(name: str, members: list[TeamMember]) -> TeamMember | None:
+    """Return best-matching TeamMember for a given name string, or None."""
+    name_lower = name.strip().lower()
+    if not name_lower:
+        return None
+    # Exact match first
+    for m in members:
+        if m.name.strip().lower() == name_lower:
+            return m
+    # Token overlap (≥50%)
+    name_parts = set(name_lower.split())
+    best_member, best_score = None, 0.0
+    for m in members:
+        tm_parts = set(m.name.strip().lower().split())
+        common = name_parts & tm_parts
+        score = len(common) / max(len(name_parts), len(tm_parts), 1)
+        if score > best_score and score >= 0.5:
+            best_score = score
+            best_member = m
+    return best_member
+
+
 def try_link_report_to_team_member(doc_id: int, db: Session) -> None:
-    """After a report is processed, try to match developer_name to a TeamMember."""
+    """
+    After a report is processed, link it to one or more team members.
+    - Consolidated reports: creates ReportMemberLink rows for each matched section.
+    - Individual reports: falls back to setting Document.team_member_id (backward compat).
+    """
     doc = db.get(Document, doc_id)
     if not doc or doc.doc_type not in ("report", "client_report", "interview"):
         return
     if not doc.extracted_data:
         return
-    data = doc.extracted_data[0].structured_data
-    developer_name = data.get("developer_name") or data.get("author") or data.get("candidate_name")
-    if not developer_name:
+
+    data = doc.extracted_data[0].structured_data or {}
+    members = (
+        db.query(TeamMember)
+        .filter(TeamMember.project_id == doc.project_id, TeamMember.status == "active")
+        .all()
+    )
+    if not members:
         return
-    name_lower = developer_name.strip().lower()
-    members = db.query(TeamMember).filter(TeamMember.project_id == doc.project_id).all()
-    for m in members:
-        if m.name.lower() in name_lower or name_lower in m.name.lower():
-            doc.team_member_id = m.id
+
+    member_sections = data.get("member_sections", [])
+
+    if member_sections:
+        # Consolidated path: link each section to its matched team member
+        for section in member_sections:
+            section_name = section.get("member_name", "")
+            matched = _fuzzy_match_member(section_name, members)
+            if matched:
+                existing = (
+                    db.query(ReportMemberLink)
+                    .filter_by(document_id=doc_id, team_member_id=matched.id)
+                    .first()
+                )
+                if not existing:
+                    db.add(ReportMemberLink(
+                        document_id=doc_id,
+                        team_member_id=matched.id,
+                        member_name_in_report=section_name,
+                        section_data=section,
+                    ))
+                    logger.info(
+                        "Linked report %d section '%s' → team member %d (%s)",
+                        doc_id, section_name, matched.id, matched.name,
+                    )
+                # If only one section and it matched, also set the legacy FK for compatibility
+                if len(member_sections) == 1:
+                    doc.team_member_id = matched.id
+            else:
+                logger.warning("Report %d: no match for section '%s'", doc_id, section_name)
+        db.commit()
+    else:
+        # Legacy individual report path
+        developer_name = data.get("developer_name") or data.get("author") or data.get("candidate_name") or ""
+        matched = _fuzzy_match_member(developer_name, members)
+        if matched:
+            doc.team_member_id = matched.id
             db.commit()
-            return
+            logger.info("Linked individual report %d → team member %d", doc_id, matched.id)

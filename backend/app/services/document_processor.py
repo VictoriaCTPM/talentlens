@@ -36,6 +36,30 @@ class JDExtracted(BaseModel):
     requirements: list[str] = []
 
 
+class MemberReportSection(BaseModel):
+    """One person's section within a consolidated team report."""
+    member_name: str
+    role: str | None = None
+    tasks_completed: list[str] = []
+    tasks_in_progress: list[str] = []
+    blockers: list[str] = []
+    hours_logged: float | None = None
+    notes: str | None = None
+
+
+class ConsolidatedReportExtracted(BaseModel):
+    """A report covering one or multiple team members."""
+    report_type: str = "consolidated"  # "consolidated" or "individual"
+    project_name: str | None = None
+    week_date: str | None = None
+    team_summary: str | None = None
+    member_sections: list[MemberReportSection] = []
+    overall_blockers: list[str] = []
+    overall_next_steps: list[str] = []
+    candidates_submitted: list[dict[str, Any]] = []
+    candidates_placed: list[dict[str, Any]] = []
+
+
 class WeeklyReportExtracted(BaseModel):
     developer_name: str | None = None
     project_name: str | None = None
@@ -62,10 +86,10 @@ class InterviewResultExtracted(BaseModel):
 _SCHEMA_MAP: dict[str, type[BaseModel]] = {
     "resume": ResumeExtracted,
     "jd": JDExtracted,
-    "report": WeeklyReportExtracted,
+    "report": ConsolidatedReportExtracted,
     "interview": InterviewResultExtracted,
-    "job_request": JDExtracted,       # same shape as JD
-    "client_report": WeeklyReportExtracted,  # similar shape
+    "job_request": JDExtracted,
+    "client_report": ConsolidatedReportExtracted,
 }
 
 _DOC_TYPES = list(_SCHEMA_MAP.keys())
@@ -106,7 +130,13 @@ RESPOND WITH THIS EXACT JSON STRUCTURE:
 SCHEMAS PER DOC TYPE:
 - resume: name, email, phone, skills (list), experience (list of {{company, role, duration, description}}), education (list of {{institution, degree, year}}), summary
 - jd / job_request: title, company, department, level (junior/mid/senior/lead), required_skills (list), nice_to_have_skills (list), responsibilities (list), requirements (list)
-- report / client_report: developer_name, project_name, week_date, tasks_completed (list), tasks_in_progress (list), blockers (list), hours_logged (number or null)
+- report / client_report: A report may cover ONE person or an ENTIRE TEAM. Always use this structure:
+  report_type: "consolidated" if multiple people are mentioned, "individual" if only one person.
+  project_name, week_date, team_summary (brief overall note if present).
+  member_sections: array of objects, one per person — each has: member_name (required), role, tasks_completed (list), tasks_in_progress (list), blockers (list), hours_logged (number or null), notes.
+  If the report covers only ONE person, still use member_sections with a single entry.
+  overall_blockers: blockers affecting the whole team. overall_next_steps: team-level next steps.
+  candidates_submitted: [{{name, role}}], candidates_placed: [{{name, role}}].
 - interview: candidate_name, position, interview_date, interviewer, technical_score (1-10), communication_score (1-10), verdict (pass/fail/maybe), notes, strengths (list), weaknesses (list)
 
 Rules:
@@ -126,8 +156,22 @@ def _build_extraction_only_prompt(text: str, filename: str, doc_type: str) -> st
         "resume": "name, email, phone, skills (list), experience (list of {company, role, duration, description}), education (list of {institution, degree, year}), summary",
         "jd": "title, company, department, level (junior/mid/senior/lead), required_skills (list), nice_to_have_skills (list), responsibilities (list), requirements (list)",
         "job_request": "title, company, department, level (junior/mid/senior/lead), required_skills (list), nice_to_have_skills (list), responsibilities (list), requirements (list)",
-        "report": "developer_name, project_name, week_date, tasks_completed (list), tasks_in_progress (list), blockers (list), hours_logged (number or null)",
-        "client_report": "developer_name, project_name, week_date, tasks_completed (list), tasks_in_progress (list), blockers (list), hours_logged (number or null)",
+        "report": (
+            'report_type ("consolidated" if multiple people, "individual" if one person), '
+            "project_name, week_date, team_summary, "
+            "member_sections (array of {member_name, role, tasks_completed, tasks_in_progress, blockers, hours_logged, notes}), "
+            "overall_blockers (list), overall_next_steps (list), "
+            "candidates_submitted (list of {name, role}), candidates_placed (list of {name, role}). "
+            "Always use member_sections even for a single person."
+        ),
+        "client_report": (
+            'report_type ("consolidated" if multiple people, "individual" if one person), '
+            "project_name, week_date, team_summary, "
+            "member_sections (array of {member_name, role, tasks_completed, tasks_in_progress, blockers, hours_logged, notes}), "
+            "overall_blockers (list), overall_next_steps (list), "
+            "candidates_submitted (list of {name, role}), candidates_placed (list of {name, role}). "
+            "Always use member_sections even for a single person."
+        ),
         "interview": "candidate_name, position, interview_date, interviewer, technical_score (1-10), communication_score (1-10), verdict (pass/fail/maybe), notes, strengths (list), weaknesses (list)",
     }
     fields = schema_fields.get(doc_type, "")
@@ -337,28 +381,65 @@ def _chunk_report(text: str, extracted: dict) -> list[dict[str, Any]]:
     chunks = []
     meta = _base_meta("report", extracted)
 
-    completed = extracted.get("tasks_completed", [])
-    in_progress = extracted.get("tasks_in_progress", [])
-    blockers = extracted.get("blockers", [])
+    member_sections = extracted.get("member_sections", [])
 
-    if completed:
-        chunks.append({
-            "section": "completed",
-            "text": "Tasks completed:\n" + "\n".join(f"- {t}" for t in completed),
-            "metadata": {**meta, "section": "completed"},
-        })
-    if in_progress:
-        chunks.append({
-            "section": "in_progress",
-            "text": "Tasks in progress:\n" + "\n".join(f"- {t}" for t in in_progress),
-            "metadata": {**meta, "section": "in_progress"},
-        })
-    if blockers:
-        chunks.append({
-            "section": "blockers",
-            "text": "Blockers:\n" + "\n".join(f"- {t}" for t in blockers),
-            "metadata": {**meta, "section": "blockers"},
-        })
+    if member_sections:
+        # Consolidated report: one chunk per member section
+        for i, section in enumerate(member_sections):
+            member_name = section.get("member_name", f"member_{i}")
+            section_lines = []
+            if section.get("tasks_completed"):
+                section_lines.append("Completed: " + "; ".join(str(t) for t in section["tasks_completed"]))
+            if section.get("tasks_in_progress"):
+                section_lines.append("In progress: " + "; ".join(str(t) for t in section["tasks_in_progress"]))
+            if section.get("blockers"):
+                section_lines.append("Blockers: " + "; ".join(str(b) for b in section["blockers"]))
+            if section.get("notes"):
+                section_lines.append(f"Notes: {section['notes']}")
+            chunk_text = f"Team member: {member_name}\n" + "\n".join(section_lines)
+            chunks.append({
+                "section": f"member_{i}_{member_name}",
+                "text": chunk_text,
+                "metadata": {**meta, "section": "member_report", "person_name": member_name},
+            })
+
+        # Overall team-level chunk
+        overall_blockers = extracted.get("overall_blockers", [])
+        overall_next = extracted.get("overall_next_steps", [])
+        if overall_blockers or overall_next:
+            team_lines = []
+            if overall_blockers:
+                team_lines.append("Team blockers: " + "; ".join(str(b) for b in overall_blockers))
+            if overall_next:
+                team_lines.append("Team next steps: " + "; ".join(str(s) for s in overall_next))
+            chunks.append({
+                "section": "team_overall",
+                "text": "\n".join(team_lines),
+                "metadata": {**meta, "section": "team_overall"},
+            })
+    else:
+        # Legacy individual report format (backward compatible)
+        completed = extracted.get("tasks_completed", [])
+        in_progress = extracted.get("tasks_in_progress", [])
+        blockers = extracted.get("blockers", [])
+        if completed:
+            chunks.append({
+                "section": "completed",
+                "text": "Tasks completed:\n" + "\n".join(f"- {t}" for t in completed),
+                "metadata": {**meta, "section": "completed"},
+            })
+        if in_progress:
+            chunks.append({
+                "section": "in_progress",
+                "text": "Tasks in progress:\n" + "\n".join(f"- {t}" for t in in_progress),
+                "metadata": {**meta, "section": "in_progress"},
+            })
+        if blockers:
+            chunks.append({
+                "section": "blockers",
+                "text": "Blockers:\n" + "\n".join(f"- {t}" for t in blockers),
+                "metadata": {**meta, "section": "blockers"},
+            })
 
     if not chunks:
         chunks = _sliding_window(text, doc_type="report", meta=meta)

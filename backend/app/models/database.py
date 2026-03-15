@@ -207,6 +207,21 @@ class CandidateEvent(Base):
     candidate = relationship("Candidate", back_populates="events")
 
 
+class ReportMemberLink(Base):
+    """Links a consolidated report to multiple team members with per-member extracted data."""
+    __tablename__ = "report_member_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    team_member_id = Column(Integer, ForeignKey("team_members.id"), nullable=False, index=True)
+    member_name_in_report = Column(String(255), nullable=False)
+    section_data = Column(JSON, nullable=True)   # the MemberReportSection dict for this member
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    document = relationship("Document")
+    team_member = relationship("TeamMember")
+
+
 class TeamMember(Base):
     __tablename__ = "team_members"
 
