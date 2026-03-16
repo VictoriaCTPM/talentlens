@@ -1,26 +1,30 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      DATABASE_URL: sqlite:///./data/talentlens.db
-      UPLOAD_DIR: ./data/uploads
-      CHROMA_DIR: ./data/chroma
+      DATABASE_URL: sqlite:////app/data/talentlens.db
+      UPLOAD_DIR: /app/data/uploads
+      CHROMA_DIR: /app/data/chroma
       CORS_ORIGINS: "http://localhost:3000"
     volumes:
       - backend_data:/app/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s  # sentence-transformers model load takes time
+      start_period: 90s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
