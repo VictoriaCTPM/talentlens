@@ -2,14 +2,12 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# System deps for PDF/DOCX parsing
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libmagic1 \
-    && rm -rf /var/lib/apt/lists/*
-
 # Install Python dependencies first (layer cache)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-bake the embedding model into the image so Railway never downloads it at runtime
+RUN python -c "from fastembed import TextEmbedding; list(TextEmbedding('sentence-transformers/all-MiniLM-L6-v2').embed(['warmup']))"
 
 # Copy application code
 COPY app/ ./app/

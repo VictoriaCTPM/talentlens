@@ -28,16 +28,14 @@ def parse_document(file_path: str, file_type: str) -> str:
 
 
 def _parse_pdf(file_path: str) -> str:
-    import fitz  # PyMuPDF
+    from pdfminer.high_level import extract_text
 
-    pages = []
-    with fitz.open(file_path) as doc:
-        for page in doc:
-            try:
-                pages.append(page.get_text("text"))
-            except Exception as exc:
-                logger.warning("PDF page extraction error (skipping): %s", exc)
-    return _clean("\n".join(pages))
+    try:
+        text = extract_text(file_path)
+        return _clean(text or "")
+    except Exception as exc:
+        logger.warning("PDF extraction error: %s", exc)
+        return ""
 
 
 def _parse_docx(file_path: str) -> str:
