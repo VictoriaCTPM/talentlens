@@ -1,3 +1,0 @@
-James Wilson — Senior Data Engineer
-7 years. Python, Spark, Databricks, Airflow, Delta Lake, SQL, AWS Glue
-Builds ETL pipelines for patient records.

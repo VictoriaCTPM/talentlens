@@ -1,3 +1,0 @@
-Ryan O'Brien — Senior DevOps Engineer
-6 years. Docker, Kubernetes, Terraform, Azure, Azure DevOps, Helm, ArgoCD, GitOps
-Manages client Azure AKS cluster.

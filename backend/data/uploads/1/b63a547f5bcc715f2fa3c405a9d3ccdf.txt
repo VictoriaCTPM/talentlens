@@ -1,5 +1,0 @@
-Yuki Tanaka — Senior Backend Engineer
-9 years experience
-Python, FastAPI, PostgreSQL, Redis, Kafka, Kubernetes, AWS, PCI-DSS, high-throughput systems
-Previous: Rakuten Payments Tokyo (5 years), Adyen Amsterdam (2 years)
-Fluent Polish, English, Japanese

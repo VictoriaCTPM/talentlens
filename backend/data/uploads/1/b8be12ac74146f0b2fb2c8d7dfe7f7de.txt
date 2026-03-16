@@ -1,4 +1,0 @@
-Weekly Report — Anna Kowalski — Week 10
-Work done: Implemented idempotency layer for payment processing, reviewed PR for Redis caching, fixed race condition in transaction rollback.
-Challenges: Load testing revealed bottlenecks at 5000 TPS.
-Next week: Optimize DB connection pool, add circuit breaker pattern.

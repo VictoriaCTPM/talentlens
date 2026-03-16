@@ -1,4 +1,0 @@
-Marcin Zając — Junior-Mid Backend Developer
-2 years experience
-Python, Flask, MySQL, Git
-Previous: Web agency intern
